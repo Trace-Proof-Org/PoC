@@ -1,3 +1,2 @@
-# add dependencies as needed, e.g.:
-# anthropic
-# pytest
+anthropic>=1.0.0
+google-genai>=1.0.0

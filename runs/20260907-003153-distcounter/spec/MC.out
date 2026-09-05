@@ -1,0 +1,262 @@
+@!@!@STARTMSG 2262:0 @!@!@
+TLC2 Version 2026.09.04.170753 (rev: b123b22)
+@!@!@ENDMSG 2262 @!@!@
+@!@!@STARTMSG 2187:0 @!@!@
+Running breadth-first search Model-Checking with fp 8 and seed 4586315768655149527 with 1 worker on 12 cores with 3502MB heap and 64MB offheap memory [pid: 120596] (Linux 6.19.10-200.fc43.x86_64 amd64, Red Hat, Inc. 25.0.2 64bit, MSBDiskFPSet, DiskStateQueue).
+@!@!@ENDMSG 2187 @!@!@
+@!@!@STARTMSG 2220:0 @!@!@
+Starting SANY...
+@!@!@ENDMSG 2220 @!@!@
+Parsing file /home/icarus/PoC/runs/20260907-003153-distcounter/spec/MC.tla
+Parsing file /home/icarus/PoC/runs/20260907-003153-distcounter/spec/DistCounter.tla
+Parsing file /tmp/tlc-15922823741084748734/_TLCTrace.tla (jar:file:/home/icarus/.vscode/extensions/tlaplus.vscode-ide-2026.9.41716/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-15922823741084748734/Integers.tla (jar:file:/home/icarus/.vscode/extensions/tlaplus.vscode-ide-2026.9.41716/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-15922823741084748734/Sequences.tla (jar:file:/home/icarus/.vscode/extensions/tlaplus.vscode-ide-2026.9.41716/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-15922823741084748734/FiniteSets.tla (jar:file:/home/icarus/.vscode/extensions/tlaplus.vscode-ide-2026.9.41716/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-15922823741084748734/TLC.tla (jar:file:/home/icarus/.vscode/extensions/tlaplus.vscode-ide-2026.9.41716/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-15922823741084748734/Naturals.tla (jar:file:/home/icarus/.vscode/extensions/tlaplus.vscode-ide-2026.9.41716/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-15922823741084748734/TLCExt.tla (jar:file:/home/icarus/.vscode/extensions/tlaplus.vscode-ide-2026.9.41716/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module DistCounter
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module MC
+Linting of module DistCounter
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module MC
+@!@!@STARTMSG 2219:0 @!@!@
+SANY finished.
+@!@!@ENDMSG 2219 @!@!@
+@!@!@STARTMSG 2185:0 @!@!@
+Starting... (2026-09-07 00:33:16)
+@!@!@ENDMSG 2185 @!@!@
+@!@!@STARTMSG 2189:0 @!@!@
+Computing initial states...
+@!@!@ENDMSG 2189 @!@!@
+@!@!@STARTMSG 2190:0 @!@!@
+Finished computing initial states: 1 distinct state generated at 2026-09-07 00:33:17.
+@!@!@ENDMSG 2190 @!@!@
+@!@!@STARTMSG 2110:1 @!@!@
+Invariant ConsistentCounter is violated.
+@!@!@ENDMSG 2110 @!@!@
+@!@!@STARTMSG 2121:1 @!@!@
+The behavior up to this point is:
+@!@!@ENDMSG 2121 @!@!@
+@!@!@STARTMSG 2217:4 @!@!@
+1: <Initial predicate>
+/\ local_val = (n1 :> 0 @@ n2 :> 0)
+/\ counter = 0
+/\ ops_done = (n1 :> 0 @@ n2 :> 0)
+/\ total_completed = 0
+/\ pc = (n1 :> "idle" @@ n2 :> "idle")
+/\ dummyFaultCount = 0
+
+@!@!@ENDMSG 2217 @!@!@
+@!@!@STARTMSG 2217:4 @!@!@
+2: <MCReadCounter(n1) line 18, col 3 to line 19, col 30 of module MC>
+/\ local_val = (n1 :> 0 @@ n2 :> 0)
+/\ counter = 0
+/\ ops_done = (n1 :> 0 @@ n2 :> 0)
+/\ total_completed = 0
+/\ pc = (n1 :> "read" @@ n2 :> "idle")
+/\ dummyFaultCount = 0
+
+@!@!@ENDMSG 2217 @!@!@
+@!@!@STARTMSG 2217:4 @!@!@
+3: <MCReadCounter(n2) line 18, col 3 to line 19, col 30 of module MC>
+/\ local_val = (n1 :> 0 @@ n2 :> 0)
+/\ counter = 0
+/\ ops_done = (n1 :> 0 @@ n2 :> 0)
+/\ total_completed = 0
+/\ pc = (n1 :> "read" @@ n2 :> "read")
+/\ dummyFaultCount = 0
+
+@!@!@ENDMSG 2217 @!@!@
+@!@!@STARTMSG 2217:4 @!@!@
+4: <MCWriteCounter(n1) line 22, col 3 to line 23, col 30 of module MC>
+/\ local_val = (n1 :> 0 @@ n2 :> 0)
+/\ counter = 1
+/\ ops_done = (n1 :> 1 @@ n2 :> 0)
+/\ total_completed = 1
+/\ pc = (n1 :> "idle" @@ n2 :> "read")
+/\ dummyFaultCount = 0
+
+@!@!@ENDMSG 2217 @!@!@
+@!@!@STARTMSG 2217:4 @!@!@
+5: <MCWriteCounter(n2) line 22, col 3 to line 23, col 30 of module MC>
+/\ local_val = (n1 :> 0 @@ n2 :> 0)
+/\ counter = 1
+/\ ops_done = (n1 :> 1 @@ n2 :> 1)
+/\ total_completed = 2
+/\ pc = (n1 :> "idle" @@ n2 :> "idle")
+/\ dummyFaultCount = 0
+
+@!@!@ENDMSG 2217 @!@!@
+"CounterExample written: /home/icarus/PoC/runs/20260907-003153-distcounter/spec/MC_trace_T2026-09-06_21-33-16_F8_W1_Mbfs.tlc"
+@!@!@STARTMSG 2201:0 @!@!@
+The coverage statistics at 2026-09-07 00:33:17 (see https://explain.tlapl.us/module-coverage-statistics for how to interpret the following statistics).
+@!@!@ENDMSG 2201 @!@!@
+@!@!@STARTMSG 2779:0 @!@!@
+<local_val line 11, col 3 to line 11, col 11 of module DistCounter>: 4
+@!@!@ENDMSG 2779 @!@!@
+@!@!@STARTMSG 2779:0 @!@!@
+<counter line 9, col 3 to line 9, col 9 of module DistCounter>: 3
+@!@!@ENDMSG 2779 @!@!@
+@!@!@STARTMSG 2779:0 @!@!@
+<ops_done line 12, col 3 to line 12, col 10 of module DistCounter>: 5
+@!@!@ENDMSG 2779 @!@!@
+@!@!@STARTMSG 2779:0 @!@!@
+<total_completed line 13, col 3 to line 13, col 17 of module DistCounter>: 3
+@!@!@ENDMSG 2779 @!@!@
+@!@!@STARTMSG 2779:0 @!@!@
+<pc line 10, col 3 to line 10, col 4 of module DistCounter>: 5
+@!@!@ENDMSG 2779 @!@!@
+@!@!@STARTMSG 2779:0 @!@!@
+<dummyFaultCount line 5, col 3 to line 5, col 17 of module MC>: 1
+@!@!@ENDMSG 2779 @!@!@
+@!@!@STARTMSG 2773:0 @!@!@
+<MCInit line 13, col 1 to line 13, col 6 of module MC>: 3:3
+@!@!@ENDMSG 2773 @!@!@
+@!@!@STARTMSG 2775:0 @!@!@
+  line 26, col 11 to line 26, col 65 of module DistCounter: 3:6
+@!@!@ENDMSG 2775 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 26, col 28 to line 26, col 64 of module DistCounter: 6
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 26, col 18 to line 26, col 22 of module DistCounter: 3
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2775:0 @!@!@
+  line 27, col 18 to line 27, col 36 of module DistCounter: 3:6
+@!@!@ENDMSG 2775 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 27, col 25 to line 27, col 29 of module DistCounter: 3
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2775:0 @!@!@
+  line 28, col 17 to line 28, col 35 of module DistCounter: 3:6
+@!@!@ENDMSG 2775 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 28, col 24 to line 28, col 28 of module DistCounter: 3
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 15, col 6 to line 15, col 24 of module MC: 3
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2772:0 @!@!@
+<MCReadCounter line 17, col 1 to line 17, col 16 of module MC>: 9:17
+@!@!@ENDMSG 2772 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 32, col 6 to line 32, col 19 of module DistCounter: 47
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 32, col 6 to line 32, col 10 of module DistCounter: 30
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 33, col 6 to line 33, col 25 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 34, col 6 to line 34, col 51 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 35, col 6 to line 35, col 36 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 36, col 6 to line 36, col 53 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 18, col 18 to line 18, col 18 of module MC: 30
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 19, col 6 to line 19, col 30 of module MC: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2772:0 @!@!@
+<MCWriteCounter line 21, col 1 to line 21, col 17 of module MC>: 7:13
+@!@!@ENDMSG 2772 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 39, col 6 to line 39, col 19 of module DistCounter: 38
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 39, col 6 to line 39, col 10 of module DistCounter: 26
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 40, col 6 to line 40, col 32 of module DistCounter: 12
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 40, col 17 to line 40, col 32 of module DistCounter: 13
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 41, col 6 to line 41, col 57 of module DistCounter: 12
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 41, col 18 to line 41, col 57 of module DistCounter: 13
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 42, col 6 to line 42, col 43 of module DistCounter: 12
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 42, col 25 to line 42, col 43 of module DistCounter: 13
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 43, col 6 to line 43, col 81 of module DistCounter: 12
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 43, col 12 to line 43, col 81 of module DistCounter: 13
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 44, col 6 to line 44, col 28 of module DistCounter: 12
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 22, col 19 to line 22, col 19 of module MC: 26
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 23, col 6 to line 23, col 30 of module MC: 12
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2774:0 @!@!@
+<MCTypeOK line 9, col 1 to line 9, col 8 of module MC>
+@!@!@ENDMSG 2774 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 10, col 3 to line 11, col 28 of module MC: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2774:0 @!@!@
+<NoLostUpdates line 55, col 1 to line 55, col 13 of module DistCounter>
+@!@!@ENDMSG 2774 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 56, col 3 to line 56, col 52 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |line 56, col 3 to line 56, col 9 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  ||line 53, col 12 to line 53, col 42 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |||line 53, col 29 to line 53, col 42 of module DistCounter: 18
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  |||line 53, col 21 to line 53, col 25 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2774:0 @!@!@
+<ConsistentCounter line 58, col 1 to line 58, col 17 of module DistCounter>
+@!@!@ENDMSG 2774 @!@!@
+@!@!@STARTMSG 2221:0 @!@!@
+  line 59, col 3 to line 59, col 27 of module DistCounter: 17
+@!@!@ENDMSG 2221 @!@!@
+@!@!@STARTMSG 2202:0 @!@!@
+End of statistics.
+@!@!@ENDMSG 2202 @!@!@
+@!@!@STARTMSG 2200:0 @!@!@
+Progress(5) at 2026-09-07 00:33:17: 19 states generated (1,928 s/min), 17 distinct states found (1,725 ds/min), 7 states left on queue.
+@!@!@ENDMSG 2200 @!@!@
+@!@!@STARTMSG 2199:0 @!@!@
+19 states generated, 17 distinct states found, 7 states left on queue.
+@!@!@ENDMSG 2199 @!@!@
+@!@!@STARTMSG 2194:0 @!@!@
+The depth of the complete state graph search is 5.
+@!@!@ENDMSG 2194 @!@!@
+@!@!@STARTMSG 2186:0 @!@!@
+Finished in 592ms at (2026-09-07 00:33:17)
+@!@!@ENDMSG 2186 @!@!@

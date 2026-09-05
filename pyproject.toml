@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traceproof"
+version = "0.1.0"
+description = "TraceProof: LLM-driven TLA+ spec generation and model checking for distributed/concurrent systems"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=1.0.0"]
+google = ["google-genai>=1.0.0"]
+all = ["anthropic>=1.0.0", "google-genai>=1.0.0"]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+traceproof = "harness.pipeline:_cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["shared*", "agents*", "harness*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
