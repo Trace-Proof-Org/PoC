@@ -1,5 +1,5 @@
 """
-Phase 3 — Model Generation
+Model Generation
 Reads run-config.md + knowledge/_index.md, selects relevant modules,
 drafts model/base.tla + model/base.cfg, appends to model/generation-log.md.
 
@@ -22,18 +22,12 @@ BASE_TLA      = "model/base.tla"
 BASE_CFG      = "model/base.cfg"
 
 
-# ---------------------------------------------------------------------------
 # Errors
-# ---------------------------------------------------------------------------
-
 class GenerateError(Exception):
     pass
 
 
-# ---------------------------------------------------------------------------
 # run-config.md reader (reuse same pattern as index_phase)
-# ---------------------------------------------------------------------------
-
 def _parse_run_config(out: Path) -> dict[str, str]:
     cfg = out / RUN_CONFIG
     if not cfg.exists():
@@ -46,10 +40,7 @@ def _parse_run_config(out: Path) -> dict[str, str]:
     return data
 
 
-# ---------------------------------------------------------------------------
 # Knowledge index reader
-# ---------------------------------------------------------------------------
-
 def _load_index(out: Path) -> dict[str, dict[str, str]]:
     """Returns {module: {hash, cache_file, ts}}"""
     idx = out / INDEX_FILE
@@ -76,10 +67,7 @@ def _read_knowledge_file(out: Path, cache_path: str) -> str:
     return ""
 
 
-# ---------------------------------------------------------------------------
 # Module selection
-# ---------------------------------------------------------------------------
-
 CONCURRENCY_TOKENS = re.compile(
     r"\b(lock|mutex|semaphore|atomic|thread|asyncio|await|async|"
     r"concurrent|queue|channel|barrier|condition|race)\b",
@@ -106,7 +94,7 @@ def _select_modules(
     scenario: str | None,
 ) -> list[tuple[str, str]]:
     """
-    Returns [(module_name, knowledge_text)] — up to 3 if scenario, else 1.
+    Returns [(module_name, knowledge_text)], up to 3 if scenario, else 1.
     """
     entries = []
     for mod, info in index.items():
@@ -125,10 +113,7 @@ def _select_modules(
     return [(mod, text) for mod, text, _ in selected]
 
 
-# ---------------------------------------------------------------------------
 # Caching check (skip if hashes unchanged)
-# ---------------------------------------------------------------------------
-
 def _generation_cache_key(selected: list[tuple[str, str]], index: dict[str, dict[str, str]]) -> str:
     """Stable key: sorted module names + their hashes."""
     parts = []
@@ -149,9 +134,7 @@ def _read_last_cache_key(out: Path) -> str:
     return ""
 
 
-# ---------------------------------------------------------------------------
 # LLM draft
-# ---------------------------------------------------------------------------
 
 # Credential resolution is centralised in setup_phase.
 from setup_phase import credential_present as _credential_present, get_api_key as _get_api_key, get_base_url as _get_base_url
@@ -182,8 +165,8 @@ Requirements:
 2. Include Init and Next predicates (or PlusCal translates them).
 3. Define at least one INVARIANT for each candidate invariant in the knowledge files.
 4. Add inline comments citing the knowledge file for every non-trivial guard, e.g.:
-   \\* Source: knowledge/{selected[0][0]}.md — "<invariant text>"
-5. Keep the spec small and checkable — a PoC, not a complete model.
+   \\* Source: knowledge/{selected[0][0]}.md, "<invariant text>"
+5. Keep the spec small and checkable, a PoC, not a complete model.
 6. Output ONLY the raw TLA+ text (no markdown fences, no explanation).
    Start with: ---- MODULE base ----
 
@@ -252,10 +235,7 @@ def _call_anthropic(api_key: str, model: str, prompt: str) -> str:
     return data["content"][0]["text"]
 
 
-# ---------------------------------------------------------------------------
 # Parse LLM output → tla + cfg
-# ---------------------------------------------------------------------------
-
 def _split_llm_output(raw: str) -> tuple[str, str]:
     """Split raw LLM output into (tla_text, cfg_text) on '====CFG===='."""
     if "====CFG====" in raw:
@@ -264,10 +244,7 @@ def _split_llm_output(raw: str) -> tuple[str, str]:
     return raw.strip(), ""
 
 
-# ---------------------------------------------------------------------------
 # Local lint (no MCP)
-# ---------------------------------------------------------------------------
-
 LINT_CHECKS = [
     (r"MODULE\s+\w+", "Missing MODULE declaration"),
     (r"\bInit\b",     "Missing Init predicate"),
@@ -299,10 +276,7 @@ Spec:
     return _call_llm(provider, model, fix_prompt)
 
 
-# ---------------------------------------------------------------------------
 # Deterministic fallback spec
-# ---------------------------------------------------------------------------
-
 def _fallback_spec(selected: list[tuple[str, str]], scenario: str | None) -> tuple[str, str]:
     """Minimal valid TLA+ spec generated from knowledge text, no LLM needed."""
     mod_name = selected[0][0] if selected else "unknown"
@@ -317,10 +291,10 @@ def _fallback_spec(selected: list[tuple[str, str]], scenario: str | None) -> tup
                 line = line.strip().lstrip("-").strip()
                 if line and not line.startswith("("):
                     label = "Inv_" + re.sub(r"\W+", "_", line[:40]).strip("_")
-                    invariants.append((label, f"knowledge/{mod}.md — {line[:80]}"))
+                    invariants.append((label, f"knowledge/{mod}.md, {line[:80]}"))
 
     if not invariants:
-        invariants = [("Inv_Placeholder", f"knowledge/{mod_name}.md — placeholder invariant (structural fallback)")]
+        invariants = [("Inv_Placeholder", f"knowledge/{mod_name}.md, placeholder invariant (structural fallback)")]
 
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -332,13 +306,13 @@ def _fallback_spec(selected: list[tuple[str, str]], scenario: str | None) -> tup
     knowledge_list = "\n".join(f"   - knowledge/{mod}.md" for mod, _ in selected)
 
     tla = f"""---- MODULE base ----
-(* Generated by traceproof-poc — Phase 3 (Model Generation)
+(* Generated by traceproof-poc, Phase 3 (Model Generation)
    Scenario: {scenario_str}
    Derived from knowledge files:
 {knowledge_list}
    Generated: {ts}
    Self-repair attempts this run: 0
-   Note: structural fallback (no LLM key) — invariant bodies are placeholders
+   Note: structural fallback (no LLM key), invariant bodies are placeholders
 *)
 EXTENDS Naturals, Sequences, TLC
 
@@ -383,10 +357,7 @@ CONSTANTS
     return tla, cfg
 
 
-# ---------------------------------------------------------------------------
 # File writers
-# ---------------------------------------------------------------------------
-
 def _write_model(out: Path, tla: str, cfg: str) -> tuple[Path, Path]:
     model_dir = out / "model"
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -410,8 +381,8 @@ def _append_log(
     ts    = datetime.now(timezone.utc).isoformat(timespec="seconds")
     entry = f"""
 ---
-## Generation entry — {ts}
-- Scenario: {scenario if scenario else 'none — module-scoped run'}
+## Generation entry, {ts}
+- Scenario: {scenario if scenario else 'none, module-scoped run'}
 - Modules used: {', '.join(selected_mods)}
 - LLM used: {'yes' if used_llm else 'no (structural fallback)'}
 - Lint errors before fix: {lint_errors if lint_errors else 'none'}
@@ -425,10 +396,7 @@ cache-key: {cache_key}
         f.write(entry)
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
-
 def generate_run(output_dir: str | Path = ".traceproof-poc") -> tuple[Path, Path]:
     """
     Phase 3 entry point. Returns (base.tla path, base.cfg path).
@@ -438,7 +406,7 @@ def generate_run(output_dir: str | Path = ".traceproof-poc") -> tuple[Path, Path
     cfg_data  = _parse_run_config(out)
     index     = _load_index(out)
 
-    scenario_raw = cfg_data.get("Scenario", "none — module-scoped run")
+    scenario_raw = cfg_data.get("Scenario", "none, module-scoped run")
     scenario     = None if "none" in scenario_raw.lower() else scenario_raw
     provider     = cfg_data.get("Provider", "local")
     model_strong = cfg_data.get("Model (strong / drafting)", "")
@@ -456,7 +424,7 @@ def generate_run(output_dir: str | Path = ".traceproof-poc") -> tuple[Path, Path
     tla_path  = out / BASE_TLA
 
     if cache_key == last_key and tla_path.exists():
-        print(f"skipped generate (knowledge hashes unchanged) — {tla_path}")
+        print(f"skipped generate (knowledge hashes unchanged), {tla_path}")
         return tla_path, out / BASE_CFG
 
     selected_mods = [mod for mod, _ in selected]
@@ -478,7 +446,7 @@ def generate_run(output_dir: str | Path = ".traceproof-poc") -> tuple[Path, Path
             # Local lint
             lint_errors = _local_lint(tla)
             if lint_errors and model_cheap:
-                print(f"  lint errors: {lint_errors} — attempting fix with cheap model")
+                print(f"  lint errors: {lint_errors}, attempting fix with cheap model")
                 fixed = _lint_fix_with_llm(tla, lint_errors, provider, model_cheap)
                 if fixed:
                     tla, extra_cfg = _split_llm_output(fixed)

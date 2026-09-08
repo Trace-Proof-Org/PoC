@@ -1,5 +1,5 @@
 """
-Phase 4 — Verify & Export
+Verify & Export
 Drives tla-rs directly as a subprocess (validate_spec → check_spec),
 runs a capped self-repair loop on syntax failures,
 and exports to export/ only after a passing verification.
@@ -23,18 +23,12 @@ BASE_TLA   = "model/base.tla"
 BASE_CFG   = "model/base.cfg"
 
 
-# ---------------------------------------------------------------------------
 # Errors
-# ---------------------------------------------------------------------------
-
 class VerifyError(Exception):
     pass
 
 
-# ---------------------------------------------------------------------------
 # run-config.md reader
-# ---------------------------------------------------------------------------
-
 def _parse_run_config(out: Path) -> dict[str, str]:
     cfg = out / RUN_CONFIG
     if not cfg.exists():
@@ -47,10 +41,7 @@ def _parse_run_config(out: Path) -> dict[str, str]:
     return data
 
 
-# ---------------------------------------------------------------------------
 # tla-rs subprocess client
-# ---------------------------------------------------------------------------
-
 class TlaRsClient:
     """
     Drives tla-rs directly as a subprocess.
@@ -58,8 +49,8 @@ class TlaRsClient:
     of the verify phase so no other code needs to change.
 
     Supported canonicals:
-      "validate" — runs: tla-rs <spec.tla> --validate --json
-      "check"    — runs: tla-rs <spec.tla> --config <cfg> [limits] --json
+      "validate", runs: tla-rs <spec.tla> --validate --json
+      "check"   , runs: tla-rs <spec.tla> --config <cfg> [limits] --json
     """
 
     def __init__(self, binary: str) -> None:
@@ -83,7 +74,7 @@ class TlaRsClient:
                 cmd = [binary, str(tla_path), "--validate", "--json"]
             elif canonical == "check":
                 cfg_text = arguments.get("config", "")
-                # tla-rs does not support the TLC SPECIFICATION keyword — strip it
+                # tla-rs does not support the TLC SPECIFICATION keyword, strip it
                 cfg_text = "\n".join(
                     line for line in cfg_text.splitlines()
                     if not line.strip().upper().startswith("SPECIFICATION")
@@ -134,10 +125,7 @@ def _connect_tla_rs() -> TlaRsClient:
     return client
 
 
-# ---------------------------------------------------------------------------
 # validate_spec call
-# ---------------------------------------------------------------------------
-
 def _validate(client: McpClient, tla_text: str) -> tuple[bool, str]:
     """Returns (passed, error_text)."""
     try:
@@ -162,10 +150,7 @@ def _validate(client: McpClient, tla_text: str) -> tuple[bool, str]:
     return passed, str(errors)
 
 
-# ---------------------------------------------------------------------------
 # check_spec call
-# ---------------------------------------------------------------------------
-
 def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str]:
     """Returns (outcome, detail) where outcome is 'pass'|'counterexample'|'error'|'limit'."""
     max_states  = int(os.environ.get("TLA_RS_MAX_STATES",  "1000"))
@@ -206,10 +191,7 @@ def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str]:
     return "error", raw
 
 
-# ---------------------------------------------------------------------------
 # Self-repair via LLM
-# ---------------------------------------------------------------------------
-
 # Credential resolution is centralised in setup_phase.
 from setup_phase import credential_present as _credential_present, get_api_key as _get_api_key, get_base_url as _get_base_url
 
@@ -227,7 +209,7 @@ def _repair_call(
     base_url = _get_base_url(provider)
 
     prompt = f"""Fix the following TLA+ specification so it passes syntax validation.
-Apply ONLY the minimal targeted fix for the reported errors — do not rewrite the spec.
+Apply ONLY the minimal targeted fix for the reported errors, do not rewrite the spec.
 Return ONLY the corrected TLA+ text, no explanation, no markdown fences.
 
 Errors from tla-rs:
@@ -277,10 +259,7 @@ Current spec:
         return None
 
 
-# ---------------------------------------------------------------------------
 # Export
-# ---------------------------------------------------------------------------
-
 def _export(
     out:         Path,
     scenario:    str | None,
@@ -306,7 +285,7 @@ def _export(
     elif check_outcome == "counterexample":
         check_str = "COUNTEREXAMPLE FOUND"
     elif check_outcome == "limit":
-        check_str = "FAIL (limit_reached — raise TLA_RS_MAX_* and re-run verify)"
+        check_str = "FAIL (limit_reached, raise TLA_RS_MAX_* and re-run verify)"
     else:
         check_str = "FAIL"
 
@@ -333,17 +312,14 @@ def _export(
 ## Handoff
 
 This model is ready as input to the next phase (Trace Mapper / Conformance
-Checker / Ticket Agent) — not implemented in this POC.
+Checker / Ticket Agent), not implemented in this POC.
 """
     manifest_path = export_dir / "manifest.md"
     manifest_path.write_text(manifest)
     return manifest_path
 
 
-# ---------------------------------------------------------------------------
 # generation-log append
-# ---------------------------------------------------------------------------
-
 def _log_verify(
     out: Path,
     repair_count: int,
@@ -354,7 +330,7 @@ def _log_verify(
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     entry = f"""
 ---
-## Verify entry — {ts}
+## Verify entry, {ts}
 - Syntax validation: {'PASS' if syntax_pass else 'FAIL'}
 - Self-repair attempts: {repair_count}
 - Model-check outcome: {check_outcome}
@@ -366,10 +342,7 @@ def _log_verify(
         f.write(entry)
 
 
-# ---------------------------------------------------------------------------
 # knowledge files used (from generation-log)
-# ---------------------------------------------------------------------------
-
 def _knowledge_files_used(out: Path) -> list[str]:
     log = out / LOG_FILE
     if not log.exists():
@@ -384,10 +357,7 @@ def _knowledge_files_used(out: Path) -> list[str]:
     return []
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
-
 def verify_run(
     output_dir: str | Path = ".traceproof-poc",
     *,
@@ -408,7 +378,7 @@ def verify_run(
     if not cfg_path.exists():
         raise VerifyError(f"No model/base.cfg under {out}. Run 'traceproof-poc generate' first.")
 
-    scenario_raw = cfg.get("Scenario", "none — module-scoped run")
+    scenario_raw = cfg.get("Scenario", "none, module-scoped run")
     scenario     = None if "none" in scenario_raw.lower() else scenario_raw
     provider     = cfg.get("Provider", "local")
     model_strong = cfg.get("Model (strong / drafting)", "")
@@ -416,7 +386,7 @@ def verify_run(
 
     knowledge_files = _knowledge_files_used(out)
 
-    # ── Start tla-rs client ─────────────────────────────────────────────────
+    # Start tla-rs client
     owned_client = client is None
     if client is None:
         client = _connect_tla_rs()
@@ -425,7 +395,7 @@ def verify_run(
         tla_text = tla_path.read_text()
         cfg_text = cfg_path.read_text()
 
-        # ── Step 1: validate + capped self-repair ───────────────────────────
+        # Step 1: validate + capped self-repair
         repair_count = 0
         syntax_pass, errors = _validate(client, tla_text)
         print(f"Syntax validation: {'PASS' if syntax_pass else 'FAIL'}")
@@ -433,7 +403,7 @@ def verify_run(
         while not syntax_pass and repair_count < repair_cap:
             if not _credential_present(provider) or not model_strong:
                 print(
-                    f"  Syntax errors present but no LLM credentials — "
+                    f"  Syntax errors present but no LLM credentials, "
                     f"cannot self-repair. Fix model/base.tla manually.",
                     file=sys.stderr,
                 )
@@ -455,7 +425,7 @@ def verify_run(
                 f"(cap={repair_cap}). Read model/generation-log.md for details."
             )
 
-        # ── Step 2: model-check ─────────────────────────────────────────────
+        # Step 2: model-check
         print("Model checking …")
         check_outcome, check_detail = _check(client, tla_text, cfg_text)
         print(f"Model check: {check_outcome.upper()}")
@@ -469,8 +439,8 @@ def verify_run(
             )
 
         if check_outcome == "error":
-            # Model-internal bug (not a real system counterexample) — try to repair
-            print(f"  Model-check error (not a system counterexample) — attempting repair …")
+            # Model-internal bug (not a real system counterexample), try to repair
+            print(f"  Model-check error (not a system counterexample), attempting repair …")
             model_errors = check_detail
             model_repair_count = 0
             while check_outcome == "error" and model_repair_count < repair_cap:
@@ -498,7 +468,7 @@ def verify_run(
                     f"Nothing written to export/."
                 )
 
-        # ── Step 3: export ──────────────────────────────────────────────────
+        # Step 3: export
         manifest = _export(
             out=out,
             scenario=scenario,
@@ -512,8 +482,8 @@ def verify_run(
         _log_verify(out, repair_count, syntax_pass, check_outcome, check_detail)
 
         outcome_label = {
-            "pass":            "PASS — model and manifest written to export/",
-            "counterexample":  "COUNTEREXAMPLE FOUND — this is a system result, not a pipeline error. See export/manifest.md",
+            "pass":            "PASS, model and manifest written to export/",
+            "counterexample":  "COUNTEREXAMPLE FOUND, this is a system result, not a pipeline error. See export/manifest.md",
         }.get(check_outcome, check_outcome.upper())
         print(f"\n{outcome_label}")
         print(f"Manifest: {manifest}")

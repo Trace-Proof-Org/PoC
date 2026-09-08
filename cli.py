@@ -98,14 +98,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # ── options ──────────────────────────────────────────────────────────────
+    # options
     p_opts = sub.add_parser("options", help="Print provider/model options.")
     p_opts.add_argument("--source", metavar="PATH", nargs="?",
                         type=lambda v: [v] if v else None, default=None,
                         help="Optional source path to inspect.")
     p_opts.set_defaults(func=cmd_options)
 
-    # ── run (Phase 1) ─────────────────────────────────────────────────────────
+    # run
     p_run = sub.add_parser("run", help="Phase 1 — write run-config.md.")
     p_run.add_argument("--source", metavar="PATH", action="append", required=True,
                        help="Source file/dir to analyse (repeatable).")
@@ -129,19 +129,19 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Overwrite existing run-config.md.")
     p_run.set_defaults(func=cmd_run)
 
-    # ── index (Phase 2) ──────────────────────────────────────────────────────
+    # index
     p_idx = sub.add_parser("index", help="Phase 2 — walk source/docs, write knowledge/.")
     p_idx.add_argument("--out", metavar="DIR", default=".traceproof-poc",
                        help="Directory containing run-config.md (default: .traceproof-poc).")
     p_idx.set_defaults(func=cmd_index)
 
-    # ── generate (Phase 3) ───────────────────────────────────────────────────
+    # generate
     p_gen = sub.add_parser("generate", help="Phase 3 — draft TLA+ model from knowledge cache.")
     p_gen.add_argument("--out", metavar="DIR", default=".traceproof-poc",
                        help="Directory containing run-config.md (default: .traceproof-poc).")
     p_gen.set_defaults(func=cmd_generate)
 
-    # ── verify (Phase 4) ─────────────────────────────────────────────────────
+    # verify
     p_ver = sub.add_parser("verify", help="Phase 4 — tla-rs validate, model-check, export.")
     p_ver.add_argument("--out", metavar="DIR", default=".traceproof-poc",
                        help="Directory containing run-config.md (default: .traceproof-poc).")

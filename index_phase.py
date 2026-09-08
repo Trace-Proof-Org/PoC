@@ -1,5 +1,5 @@
 """
-Phase 2 — Indexing & Knowledge Cache
+Indexing & Knowledge Cache
 Walks source/docs from run-config.md, extracts per-module facts,
 writes knowledge/<module>.md + knowledge/_index.md.
 
@@ -18,10 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-# ---------------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
-
 SKIP_DIRS = {
     ".git", ".venv", "venv", "node_modules", "__pycache__",
     ".mypy_cache", ".pytest_cache", "dist", "build", ".eggs",
@@ -43,15 +40,12 @@ INDEX_FILENAME = "knowledge/_index.md"
 RUN_CONFIG     = "run-config.md"
 
 
-# ---------------------------------------------------------------------------
-# run-config.md reader (simple line-by-line, no external parser)
-# ---------------------------------------------------------------------------
-
+# run-config.md reader
 class RunConfig(NamedTuple):
     source_paths: list[Path]
     docs_paths:   list[Path]
     output_dir:   Path
-    scenario:     str | None   # None when "none — module-scoped run"
+    scenario:     str | None   # None when "none, module-scoped run"
     provider:     str
     model_strong: str
     model_cheap:  str
@@ -74,7 +68,7 @@ def _parse_run_config(out: Path) -> RunConfig:
             return []
         return [Path(p.strip()) for p in val.split(",") if p.strip()]
 
-    scenario_raw = data.get("Scenario", "none — module-scoped run")
+    scenario_raw = data.get("Scenario", "none, module-scoped run")
     scenario = None if "none" in scenario_raw.lower() else scenario_raw
 
     return RunConfig(
@@ -88,10 +82,7 @@ def _parse_run_config(out: Path) -> RunConfig:
     )
 
 
-# ---------------------------------------------------------------------------
 # File walking
-# ---------------------------------------------------------------------------
-
 def _walk_files(root: Path) -> list[Path]:
     """Recursively yield readable files, skipping noise dirs."""
     files: list[Path] = []
@@ -165,10 +156,7 @@ def _group_by_module(
     return modules
 
 
-# ---------------------------------------------------------------------------
 # Hashing
-# ---------------------------------------------------------------------------
-
 def _hash_files(files: list[Path]) -> str:
     h = hashlib.sha256()
     for f in sorted(files):
@@ -178,10 +166,7 @@ def _hash_files(files: list[Path]) -> str:
     return h.hexdigest()[:16]
 
 
-# ---------------------------------------------------------------------------
 # Structural recon (no LLM)
-# ---------------------------------------------------------------------------
-
 class ReconResult(NamedTuple):
     summary:     str
     state_vars:  list[str]
@@ -272,7 +257,7 @@ def _structural_extract(
     for cls in py_info["classes"][:8]:
         state_vars.append(f"{cls} instance state (fields unknown without LLM)")
     if not state_vars:
-        state_vars = ["(state variables not determined — no Python classes found; LLM extraction needed)"]
+        state_vars = ["(state variables not determined, no Python classes found; LLM extraction needed)"]
 
     # Initial condition
     init_sketch = "Initial state not determined from structural scan alone. LLM extraction needed."
@@ -284,7 +269,7 @@ def _structural_extract(
     if patterns["crash"]:
         invariants.append("System must handle crash/exception paths without data corruption.")
     if not invariants:
-        invariants = ["(no invariants inferred structurally — LLM extraction needed)"]
+        invariants = ["(no invariants inferred structurally, LLM extraction needed)"]
 
     # Scenario relevance
     if scenario:
@@ -303,15 +288,15 @@ def _structural_extract(
 
     # Conflicts (doc vs code)
     conflicts = "none" if not (doc_files and code_files) else (
-        "Doc files present alongside code — verify consistency manually (LLM extraction needed for precise diff)."
+        "Doc files present alongside code, verify consistency manually (LLM extraction needed for precise diff)."
     )
 
     # Open questions
-    open_qs = ["Structural scan only — full knowledge extraction requires an LLM API key."]
+    open_qs = ["Structural scan only, full knowledge extraction requires an LLM API key."]
     if py_info["imports"]:
         ext_imports = [i for i in py_info["imports"] if i not in {"os","sys","re","ast","hashlib","pathlib","typing","datetime"}]
         if ext_imports:
-            open_qs.append(f"External dependencies: {', '.join(ext_imports[:8])} — may carry relevant state or error semantics.")
+            open_qs.append(f"External dependencies: {', '.join(ext_imports[:8])}, may carry relevant state or error semantics.")
 
     return ReconResult(
         summary=summary,
@@ -324,9 +309,7 @@ def _structural_extract(
     )
 
 
-# ---------------------------------------------------------------------------
-# LLM extraction (optional — falls back to structural if no key)
-# ---------------------------------------------------------------------------
+# LLM extraction (optional, falls back to structural if no key)
 
 # Credential resolution is centralised in setup_phase.
 from setup_phase import (
@@ -359,7 +342,7 @@ def _llm_extract(
             pass
     code_block = "\n\n".join(snippets) if snippets else "(no readable files)"
 
-    scenario_line = f'Scenario to focus on: "{scenario}"' if scenario else "No specific scenario — summarise the module generally."
+    scenario_line = f'Scenario to focus on: "{scenario}"' if scenario else "No specific scenario, summarise the module generally."
 
     prompt = f"""You are a TLA+ spec assistant. Analyse this module and return a JSON object.
 
@@ -466,10 +449,7 @@ def _json_to_recon(text: str) -> ReconResult | None:
     )
 
 
-# ---------------------------------------------------------------------------
 # Knowledge file writer
-# ---------------------------------------------------------------------------
-
 def _write_knowledge_file(
     out:        Path,
     module:     str,
@@ -561,10 +541,7 @@ def _load_existing_index(out: Path) -> dict[str, str]:
     return result
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
-
 class IndexError(Exception):
     pass
 

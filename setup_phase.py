@@ -1,5 +1,5 @@
 """
-Phase 1 — Setup & Config
+Setup & Config
 Validates sources/docs, writes run-config.md under --out.
 """
 
@@ -11,10 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
-# ---------------------------------------------------------------------------
 # Provider registry
-# ---------------------------------------------------------------------------
-
 PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "anthropic": {
         "strong": "claude-opus-4-5",
@@ -65,10 +62,7 @@ class SetupError(Exception):
     pass
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
-
 def _check_paths(paths: list[str], label: str) -> list[Path]:
     resolved = []
     for p in paths:
@@ -112,10 +106,7 @@ def _key_for_provider(provider: str) -> str:
     return f"{slug}_API_KEY"
 
 
-# ---------------------------------------------------------------------------
-# Public credential helpers — import these in every phase module
-# ---------------------------------------------------------------------------
-
+# Public credential helpers, import these in every phase module
 def get_api_key(provider: str) -> str:
     """
     Resolve API key for *provider* using the priority chain:
@@ -183,7 +174,7 @@ def _write_run_config(
 ) -> Path:
     sources_str = ", ".join(str(p) for p in source_paths)
     docs_str = ", ".join(str(p) for p in docs_paths) if docs_paths else "none"
-    scenario_str = scenario if scenario else "none — module-scoped run"
+    scenario_str = scenario if scenario else "none, module-scoped run"
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     content = f"""# Run Config
@@ -206,10 +197,7 @@ def _write_run_config(
     return config_path
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
-
 def setup_run(
     *,
     source_paths: Sequence[str],
@@ -240,7 +228,7 @@ def setup_run(
 
     config_path = out / RUN_CONFIG_FILENAME
     if config_path.exists() and not fresh:
-        print(f"Resuming existing run — {config_path}")
+        print(f"Resuming existing run, {config_path}")
         print("  (pass --fresh to overwrite run-config.md and start fresh)")
         return config_path
 
@@ -295,7 +283,7 @@ def suggest_options(source: str | None = None) -> None:
         if git_root:
             print(f"  git repo: {git_root}")
             if p != git_root and p.is_dir():
-                print(f"  --source is a sub-tree of the repo — good for scoped indexing.")
+                print(f"  --source is a sub-tree of the repo, good for scoped indexing.")
             elif p == git_root:
                 subdirs = _suggest_subdirs(p)
                 if subdirs:
