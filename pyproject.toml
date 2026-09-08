@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traceproof-poc"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+traceproof-poc = "cli:main"
+
+[tool.setuptools]
+py-modules = ["cli", "setup_phase", "index_phase", "generate_phase", "verify_phase"]
