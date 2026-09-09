@@ -2,22 +2,22 @@
 set -euo pipefail
 
 # ---------------- CONFIG (edit per run) ----------------------
-SOURCE=("./examples/dist_counter")                 # one or more --source paths
-DOCS=("./docs")                  # one or more --docs paths (optional, can be empty array)
-OUT=".traceproof-poc"            # output dir
-PROVIDER="gemini"                # anthropic | openai | gemini | xai | groq | openrouter | ollama | local
-MODEL_STRONG="gemini-3.7-flash"               # e.g. claude-opus-4-5 (leave empty for provider default)
-MODEL_CHEAP="gemini-3.6-flash"                  # e.g. claude-haiku-4-5 (leave empty for provider default)
-MODEL_ADVERSARY="gemini-3.6-flash"              # dedicated model for the Adversarial Critic Agent
-SCENARIO=""                      # e.g. "worker crashes while holding distributed lock"
+SOURCE=("./examples/dist_counter")                    # one or more --source paths
+DOCS=("./docs")                                       # one or more --docs paths (optional, can be empty array)
+OUT=".traceproof-poc"                                 # output dir
+PROVIDER="gemini"                                     # anthropic | openai | gemini | xai | groq | openrouter | ollama | local
+MODEL_STRONG="gemini-3.7-flash"                       # e.g. claude-opus-4-5 (leave empty for provider default)
+MODEL_CHEAP="gemini-3.6-flash"                        # e.g. claude-haiku-4-5 (leave empty for provider default)
+MODEL_ADVERSARY="gemini-3.6-flash"                    # dedicated model for the Adversarial Critic Agent
+SCENARIO=""                                           # e.g. "worker crashes while holding distributed lock"
 SELF_REPAIR_CAP=3
-NOTES=""                         # freeform notes
-FRESH=true                       # true = overwrite existing run-config.md
+NOTES=""                                              # freeform notes
+FRESH=true                                            # true = overwrite existing run-config.md
 
 # API key (only needed if PROVIDER != local)
 export TRACEPROOF_API_KEY="YOUR_API_KEY_HERE"
 # MCP / TLC limits (only used in verify phase)
-export TLA_RS_MCP_COMMAND="/usr/local/bin/tla-mcp"
+export TLA_RS_MCP_COMMAND=$(which tla-mcp)
 export TLA_RS_MAX_STATES=5000
 export TLA_RS_MAX_DEPTH=100
 export TLA_RS_MAX_SECONDS=30
