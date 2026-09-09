@@ -25,6 +25,7 @@ export TLA_RS_MAX_SECONDS=30
 RUN_SETUP=true
 RUN_INDEX=true
 RUN_GENERATE=true
+RUN_TRACE_VALIDATE=true
 RUN_VERIFY=true     # requires tla-mcp binary installed
 # ---------------------------------------------------------------
 
@@ -66,8 +67,14 @@ if [ "$RUN_GENERATE" = true ]; then
   echo
 fi
 
+if [ "${RUN_TRACE_VALIDATE:-true}" = true ]; then
+  echo "-- Phase 4: trace validation (model-code conformance) --"
+  $CLI trace-validate --source "${SOURCE[0]}" --out "$OUT"
+  echo
+fi
+
 if [ "$RUN_VERIFY" = true ]; then
-  echo "-- Phase 4: verify --"
+  echo "-- Phase 5: model checking (invariant exploration) --"
   $CLI verify --out "$OUT"
   echo
 fi
