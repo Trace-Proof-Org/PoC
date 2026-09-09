@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ---------------- CONFIG (edit per run) ----------------------
-SOURCE=("./examples/disk_counter")                 # one or more --source paths
+SOURCE=("./examples/dist_counter")                 # one or more --source paths
 DOCS=("./docs")                  # one or more --docs paths (optional, can be empty array)
 OUT=".traceproof-poc"            # output dir
 PROVIDER="openrouter"                 # anthropic | openai | gemini | xai | groq | openrouter | ollama | local
@@ -14,7 +14,7 @@ NOTES=""                         # freeform notes
 FRESH=true                       # true = overwrite existing run-config.md
 
 # API key (only needed if PROVIDER != local)
-export TRACEPROOF_API_KEY=
+export TRACEPROOF_API_KEY="put ur api key here"
 # MCP / TLC limits (only used in verify phase)
 export TLA_RS_MCP_COMMAND="/home/adham/.local/bin/tla-mcp"
 export TLA_RS_MAX_STATES=5000
@@ -28,7 +28,7 @@ RUN_GENERATE=true
 RUN_VERIFY=true     # requires tla-mcp binary installed
 # ---------------------------------------------------------------
 
-CLI="traceproof-poc"   # or: CLI="python3 cli.py"
+CLI="traceproof-poc"
 
 build_run_args() {
   local args=()
