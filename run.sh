@@ -8,6 +8,7 @@ OUT=".traceproof-poc"            # output dir
 PROVIDER="gemini"                # anthropic | openai | gemini | xai | groq | openrouter | ollama | local
 MODEL_STRONG="gemini-3.7-flash"               # e.g. claude-opus-4-5 (leave empty for provider default)
 MODEL_CHEAP="gemini-3.6-flash"                  # e.g. claude-haiku-4-5 (leave empty for provider default)
+MODEL_ADVERSARY="gemini-3.6-flash"              # dedicated model for the Adversarial Critic Agent
 SCENARIO=""                      # e.g. "worker crashes while holding distributed lock"
 SELF_REPAIR_CAP=3
 NOTES=""                         # freeform notes
@@ -27,6 +28,7 @@ RUN_INDEX=true
 RUN_GENERATE=true
 RUN_TRACE_VALIDATE=true
 RUN_VERIFY=true     # requires tla-mcp binary installed
+RUN_ADVERSARY=true  # Adversarial Refinement Agent (Critic)
 # ---------------------------------------------------------------
 
 CLI="python3 cli.py"   # or: CLI="python3 cli.py"
@@ -76,6 +78,12 @@ fi
 if [ "$RUN_VERIFY" = true ]; then
   echo "-- Phase 5: model checking (invariant exploration) --"
   $CLI verify --out "$OUT"
+  echo
+fi
+
+if [ "${RUN_ADVERSARY:-true}" = true ]; then
+  echo "-- Phase 6: adversarial refinement (critic) --"
+  $CLI adversary --source "${SOURCE[0]}" --out "$OUT" --model "${MODEL_ADVERSARY:-$MODEL_STRONG}"
   echo
 fi
 
