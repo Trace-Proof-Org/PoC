@@ -84,6 +84,22 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_adversary(args: argparse.Namespace) -> int:
+    from agents.adversary.critic import run_adversary_critique
+    try:
+        res = run_adversary_critique(
+            output_dir=args.out,
+            target_source=args.source,
+            model=getattr(args, "model", None),
+        )
+        if res.verdict != "CONFIRMED_BUG_CANDIDATE":
+            print(f"[adversary] Adversary flagged model/invariant issue: {res.verdict}")
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _not_implemented(phase: str):
     def _cmd(_args: argparse.Namespace) -> int:
         print(f"error: phase '{phase}' is not yet implemented.", file=sys.stderr)
@@ -154,6 +170,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_ver.add_argument("--out", metavar="DIR", default=".traceproof-poc",
                        help="Directory containing run-config.md (default: .traceproof-poc).")
     p_ver.set_defaults(func=cmd_verify)
+
+    # adversary
+    p_adv = sub.add_parser("adversary", help="Phase 5 — Adversarial Refinement Agent (Critic).")
+    p_adv.add_argument("--source", metavar="PATH", default="examples/dist_counter/counter.py",
+                       help="Source file (default: examples/dist_counter/counter.py).")
+    p_adv.add_argument("--out", metavar="DIR", default=".traceproof-poc",
+                       help="Directory containing run-config.md (default: .traceproof-poc).")
+    p_adv.add_argument("--model", metavar="MODEL", default=None,
+                       help="Specific LLM model to use for the adversary critique.")
+    p_adv.set_defaults(func=cmd_adversary)
 
     return parser
 
