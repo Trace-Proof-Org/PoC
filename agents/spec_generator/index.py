@@ -177,8 +177,8 @@ class ReconResult(NamedTuple):
 
 
 def _recon_python(files: list[Path]) -> dict:
-    """Extract names, classes, functions via AST."""
-    classes, functions, imports = [], [], []
+    """Extract names, classes, functions, and global state variables via AST."""
+    classes, functions, imports, globals_ = [], [], [], []
     for f in files:
         if f.suffix != ".py":
             continue
@@ -186,6 +186,14 @@ def _recon_python(files: list[Path]) -> dict:
             tree = ast.parse(f.read_text(errors="replace"))
         except SyntaxError:
             continue
+        for node in getattr(tree, "body", []):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        globals_.append(target.id)
+            elif isinstance(node, ast.AnnAssign):
+                if isinstance(node.target, ast.Name):
+                    globals_.append(node.target.id)
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
                 classes.append(node.name)
@@ -197,7 +205,12 @@ def _recon_python(files: list[Path]) -> dict:
             elif isinstance(node, ast.ImportFrom):
                 if node.module:
                     imports.append(node.module.split(".")[0])
-    return {"classes": classes[:20], "functions": functions[:30], "imports": list(set(imports))[:20]}
+    return {
+        "classes": classes[:20],
+        "functions": functions[:30],
+        "imports": list(set(imports))[:20],
+        "globals": globals_[:20],
+    }
 
 
 def _grep_patterns(files: list[Path]) -> dict[str, list[str]]:
@@ -251,20 +264,25 @@ def _structural_extract(
     if headings:
         summary += f" Doc headings: {', '.join(headings[:4])}."
 
-    # State vars (classes + key patterns)
+    # State vars (classes + globals)
     state_vars = []
+    for var in py_info.get("globals", []):
+        state_vars.append(f"Global state variable: {var}")
     for cls in py_info["classes"][:8]:
         state_vars.append(f"{cls} instance state (fields unknown without LLM)")
     if not state_vars:
-        state_vars = ["(state variables not determined, no Python classes found; LLM extraction needed)"]
+        state_vars = ["(state variables not determined, no Python classes or globals found; LLM extraction needed)"]
 
     # Initial condition
-    init_sketch = "Initial state not determined from structural scan alone. LLM extraction needed."
+    init_sketch = "Initial state initialized from global variables or class defaults."
 
     # Invariants
     invariants = []
+    for h in headings:
+        if "invariant" in h.lower():
+            invariants.append(h.lstrip("#").strip())
     if patterns["concurrency"]:
-        invariants.append("Concurrent access to shared state must be properly serialised.")
+        invariants.append("Concurrent access to shared state must be properly serialised (MutualExclusion).")
     if patterns["crash"]:
         invariants.append("System must handle crash/exception paths without data corruption.")
     if not invariants:
