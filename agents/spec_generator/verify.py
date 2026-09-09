@@ -41,77 +41,154 @@ def _parse_run_config(out: Path) -> dict[str, str]:
     return data
 
 
-# tla-rs subprocess client
+# tla-rs MCP client
 class TlaRsClient:
     """
-    Drives tla-rs directly as a subprocess.
-    Exposes the same call(canonical, arguments) interface used by the rest
-    of the verify phase so no other code needs to change.
+    Drives tla-rs / tla-mcp via the Model Context Protocol (JSON-RPC over stdio).
+    Exposes call(canonical, arguments) matching the verify phase interface.
 
     Supported canonicals:
-      "validate", runs: tla-rs <spec.tla> --validate --json
-      "check"   , runs: tla-rs <spec.tla> --config <cfg> [limits] --json
+      "validate" -> calls MCP tool 'validate_spec'
+      "check"    -> calls MCP tool 'check_spec'
     """
 
     def __init__(self, binary: str) -> None:
         self._bin = binary
+        self._proc: subprocess.Popen | None = None
+        self._req_id = 0
 
     def start(self) -> None:
-        pass  # nothing to start
+        if self._proc is not None and self._proc.poll() is None:
+            return
+        if not shutil.which(self._bin) and not os.path.exists(self._bin):
+            raise VerifyError(
+                f"tla-rs binary not found at {self._bin!r}. "
+                "Set TLA_RS_MCP_COMMAND to the correct path."
+            )
+        self._proc = subprocess.Popen(
+            [self._bin],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        # Perform MCP initialize handshake
+        self._req_id += 1
+        self._send({
+            "jsonrpc": "2.0",
+            "id": self._req_id,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "traceproof-poc", "version": "1.0"},
+            },
+        })
+        self._recv()
+        # Initialized notification (no response expected)
+        self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def _send(self, msg: dict) -> None:
+        if not self._proc or not self._proc.stdin:
+            raise VerifyError("tla-mcp process is not running.")
+        self._proc.stdin.write(json.dumps(msg) + "\n")
+        self._proc.stdin.flush()
+
+    def _recv(self) -> dict:
+        if not self._proc or not self._proc.stdout:
+            raise VerifyError("tla-mcp process is not running.")
+        line = self._proc.stdout.readline()
+        if not line:
+            err = self._proc.stderr.read() if self._proc.stderr else ""
+            raise VerifyError(f"tla-mcp terminated unexpectedly: {err}")
+        return json.loads(line)
 
     def stop(self) -> None:
-        pass  # nothing to stop
+        if self._proc:
+            try:
+                self._proc.terminate()
+                self._proc.wait(timeout=2)
+            except Exception:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            self._proc = None
 
     def call(self, canonical: str, arguments: dict) -> dict:
-        binary = self._bin
+        self.start()
         spec_text = arguments.get("spec", "")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tla_path = Path(tmpdir) / "base.tla"
             tla_path.write_text(spec_text)
 
+            self._req_id += 1
             if canonical == "validate":
-                cmd = [binary, str(tla_path), "--validate", "--json"]
+                tool_args: dict = {"spec_path": str(tla_path)}
+                req = {
+                    "jsonrpc": "2.0",
+                    "id": self._req_id,
+                    "method": "tools/call",
+                    "params": {"name": "validate_spec", "arguments": tool_args},
+                }
             elif canonical == "check":
                 cfg_text = arguments.get("config", "")
-                # tla-rs does not support the TLC SPECIFICATION keyword, strip it
-                cfg_text = "\n".join(
-                    line for line in cfg_text.splitlines()
-                    if not line.strip().upper().startswith("SPECIFICATION")
-                )
                 cfg_path = Path(tmpdir) / "base.cfg"
                 cfg_path.write_text(cfg_text)
-                cmd = [binary, str(tla_path), "--config", str(cfg_path),
-                       "--allow-deadlock", "--json"]
-                if "max_states" in arguments:
-                    cmd += ["--max-states", str(arguments["max_states"])]
-                if "max_depth" in arguments:
-                    cmd += ["--max-depth", str(arguments["max_depth"])]
+                tool_args = {
+                    "spec_path": str(tla_path),
+                    "config_path": str(cfg_path),
+                    "max_states": int(arguments.get("max_states", 1000)),
+                    "max_depth": int(arguments.get("max_depth", 30)),
+                    "max_seconds": int(arguments.get("max_seconds", 15)),
+                    "allow_deadlock": True,
+                }
+                req = {
+                    "jsonrpc": "2.0",
+                    "id": self._req_id,
+                    "method": "tools/call",
+                    "params": {"name": "check_spec", "arguments": tool_args},
+                }
             else:
                 raise VerifyError(f"Unknown canonical tool: {canonical!r}")
 
-            try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=int(arguments.get("max_seconds", 60)),
-                )
-            except subprocess.TimeoutExpired:
-                return {"status": "limit", "raw": "tla-rs timed out"}
-            except FileNotFoundError:
-                raise VerifyError(
-                    f"tla-rs binary not found at {binary!r}. "
-                    "Set TLA_RS_MCP_COMMAND to the correct path."
-                )
+            self._send(req)
+            resp = self._recv()
 
-            output = (result.stdout or "") + (result.stderr or "")
+            if "error" in resp:
+                return {"status": "error", "error": resp["error"].get("message", str(resp["error"]))}
+
+            content = resp.get("result", {}).get("content", [])
+            text = content[0].get("text", "") if content else ""
             try:
-                return json.loads(result.stdout)
-            except (json.JSONDecodeError, ValueError):
-                # tla-rs may emit plain text; wrap it so callers can inspect
-                success = result.returncode == 0
-                return {"success": success, "raw": output, "returncode": result.returncode}
+                data = json.loads(text)
+            except Exception:
+                data = {"raw": text}
+
+            if canonical == "validate":
+                if data.get("status") == "ok":
+                    return {"success": True, "raw": text, "spec": data.get("spec")}
+                errors = data.get("errors") or [data.get("error") or text]
+                return {"success": False, "errors": errors, "raw": text}
+            elif canonical == "check":
+                status = data.get("status", "")
+                if status == "ok":
+                    return {"status": "ok", "stats": data.get("stats"), "raw": text}
+                elif status == "invariant_violation":
+                    trace_steps = data.get("trace", [])
+                    return {
+                        "status": "counterexample",
+                        "invariant": data.get("invariant", ""),
+                        "counterexample": trace_steps,
+                        "stats": data.get("stats"),
+                        "raw": text,
+                    }
+                elif status == "limit_reached":
+                    return {"status": "limit", "raw": text}
+                else:
+                    return {"status": "error", "error": text, "raw": text}
 
 
 def _call_client(client, canonical: str, arguments: dict) -> dict:
@@ -119,7 +196,12 @@ def _call_client(client, canonical: str, arguments: dict) -> dict:
 
 
 def _connect_tla_rs() -> TlaRsClient:
-    binary = os.environ.get("TLA_RS_MCP_COMMAND", "tla-rs")
+    binary = (
+        os.environ.get("TLA_RS_MCP_COMMAND")
+        or shutil.which("tla-mcp")
+        or shutil.which("tla-rs")
+        or "/usr/local/bin/tla-mcp"
+    )
     client = TlaRsClient(binary)
     client.start()
     return client
@@ -181,6 +263,8 @@ def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str]:
         return "limit", raw
     if "counterexample" in status or "counterexample" in raw.lower() or ("violation" in raw.lower() and "no violation" not in raw.lower()):
         ce = result.get("counterexample") or result.get("trace") or raw
+        if isinstance(ce, (list, dict)):
+            ce = json.dumps(ce, indent=2)
         return "counterexample", str(ce)
     if result.get("success") is True or status in ("ok", "pass", "passed") or "no violation" in raw.lower():
         return "pass", ""
