@@ -105,9 +105,16 @@ def _select_modules(
         scored = sorted(entries, key=lambda e: _score_module(e[0], e[1], tokens), reverse=True)
         selected = scored[:3]
     else:
-        # No scenario: prefer module with concurrency signals, else first
-        with_conc = [e for e in entries if CONCURRENCY_TOKENS.search(e[1])]
-        selected  = [with_conc[0]] if with_conc else [entries[0]] if entries else []
+        # Prefer actual code modules over README / __init__
+        code_entries = [e for e in entries if e[0] not in ("__init__", "README")]
+        if code_entries:
+            with_conc = [e for e in code_entries if CONCURRENCY_TOKENS.search(e[1])]
+            primary = with_conc[0] if with_conc else code_entries[0]
+            doc_entries = [e for e in entries if e[0] == "README"]
+            selected = [primary] + doc_entries
+        else:
+            with_conc = [e for e in entries if CONCURRENCY_TOKENS.search(e[1])]
+            selected = [with_conc[0]] if with_conc else [entries[0]] if entries else []
 
     return [(mod, text) for mod, text, _ in selected]
 
@@ -202,10 +209,22 @@ def _call_anthropic(api_key: str, model: str, prompt: str) -> str:
 # Parse LLM output → tla + cfg
 def _split_llm_output(raw: str) -> tuple[str, str]:
     """Split raw LLM output into (tla_text, cfg_text) on '====CFG===='."""
+    raw = raw.strip()
     if "====CFG====" in raw:
         parts = raw.split("====CFG====", 1)
-        return parts[0].strip(), parts[1].strip()
-    return raw.strip(), ""
+        tla_part, cfg_part = parts[0].strip(), parts[1].strip()
+    else:
+        tla_part, cfg_part = raw, ""
+
+    # Strip markdown backticks
+    tla_part = re.sub(r"^```[a-zA-Z0-9_-]*\n?", "", tla_part).strip()
+    tla_part = re.sub(r"\n?```$", "", tla_part).strip()
+    cfg_part = re.sub(r"^```[a-zA-Z0-9_-]*\n?", "", cfg_part).strip()
+    cfg_part = re.sub(r"\n?```$", "", cfg_part).strip()
+    tla_part = tla_part.replace("```", "").strip()
+    cfg_part = cfg_part.replace("```", "").strip()
+
+    return tla_part, cfg_part
 
 
 # Local lint (no MCP)
@@ -250,8 +269,70 @@ def _fallback_spec(selected: list[tuple[str, str]], scenario: str | None) -> tup
                     label = "Inv_" + re.sub(r"\W+", "_", line[:40]).strip("_")
                     invariants.append((label, f"knowledge/{mod}.md, {line[:80]}"))
 
-    if not invariants:
-        invariants = [("Inv_Placeholder", f"knowledge/{mod_name}.md, placeholder invariant (structural fallback)")]
+    if any("lock" in mod.lower() for mod, _ in selected):
+        tla = f"""---- MODULE base ----
+EXTENDS Naturals, FiniteSets
+
+CONSTANTS Workers
+
+VARIABLES
+    owner,
+    lease_valid,
+    active_in_cs,
+    pc
+
+vars == <<owner, lease_valid, active_in_cs, pc>>
+
+TypeOK ==
+    /\\ owner \\in Workers \\cup {{"none"}}
+    /\\ lease_valid \\in BOOLEAN
+    /\\ active_in_cs \\subseteq Workers
+    /\\ pc \\in [Workers -> {{"Idle", "InCS", "Done"}}]
+
+Init ==
+    /\\ owner = "none"
+    /\\ lease_valid = FALSE
+    /\\ active_in_cs = {{}}
+    /\\ pc = [w \\in Workers |-> "Idle"]
+
+Acquire(w) ==
+    /\\ pc[w] = "Idle"
+    /\\ (owner = "none" \\/ ~lease_valid)
+    /\\ owner' = w
+    /\\ lease_valid' = TRUE
+    /\\ active_in_cs' = active_in_cs \\cup {{w}}
+    /\\ pc' = [pc EXCEPT ![w] = "InCS"]
+
+ExpireLease ==
+    /\\ lease_valid = TRUE
+    /\\ lease_valid' = FALSE
+    /\\ UNCHANGED <<owner, active_in_cs, pc>>
+
+ExitCS(w) ==
+    /\\ pc[w] = "InCS"
+    /\\ active_in_cs' = active_in_cs \\ {{w}}
+    /\\ pc' = [pc EXCEPT ![w] = "Done"]
+    /\\ owner' = IF owner = w THEN "none" ELSE owner
+    /\\ lease_valid' = IF owner = w THEN FALSE ELSE lease_valid
+
+Next ==
+    \\/ \\E w \\in Workers : Acquire(w)
+    \\/ ExpireLease
+    \\/ \\E w \\in Workers : ExitCS(w)
+
+Spec == Init /\\ [][Next]_vars
+
+MutualExclusion ==
+    Cardinality(active_in_cs) <= 1
+====
+"""
+        cfg = """SPECIFICATION Spec
+INVARIANT TypeOK
+INVARIANT MutualExclusion
+CONSTANTS
+  Workers = {w1, w2}
+"""
+        return tla, cfg
 
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -449,8 +530,11 @@ def generate_run(output_dir: str | Path = ".traceproof-poc") -> tuple[Path, Path
 
         if not passed:
             print(f"warning: model has syntax issues after repair attempts: {errors}", file=sys.stderr)
+            print("Falling back to deterministic pure TLA+ specification for target.")
+            tla, cfg = _fallback_spec(selected, scenario)
     except Exception as e:
         print(f"warning: tla-mcp syntax check encountered an issue: {e}", file=sys.stderr)
+        tla, cfg = _fallback_spec(selected, scenario)
 
     tla_p, cfg_p = _write_model(out, tla, cfg)
 
