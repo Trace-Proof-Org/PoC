@@ -10,7 +10,7 @@ MODEL_STRONG="gemini-3.7-flash"               # e.g. claude-opus-4-5 (leave empt
 MODEL_CHEAP="gemini-3.6-flash"                  # e.g. claude-haiku-4-5 (leave empty for provider default)
 MODEL_ADVERSARY="gemini-3.6-flash"              # dedicated model for the Adversarial Critic Agent
 SCENARIO=""                      # e.g. "worker crashes while holding distributed lock"
-SELF_REPAIR_CAP=3
+SELF_REPAIR_CAP=5
 NOTES=""                         # freeform notes
 FRESH=true                       # true = overwrite existing run-config.md
 

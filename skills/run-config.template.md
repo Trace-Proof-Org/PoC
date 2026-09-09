@@ -8,7 +8,7 @@
 - **Provider**: <provider name>
 - **Model (strong / drafting)**: <model id>
 - **Model (cheap / classification)**: <model id>
-- **Self-repair cap**: <integer, default 3>
+- **Self-repair cap**: <integer, default 5>
 
 ## Notes
 <any free-text clarifications from the setup conversation with the user>

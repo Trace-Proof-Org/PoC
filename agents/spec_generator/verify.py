@@ -457,7 +457,7 @@ def verify_run(
     scenario     = None if "none" in scenario_raw.lower() else scenario_raw
     provider     = cfg.get("Provider", "local")
     model_strong = cfg.get("Model (strong / drafting)", "")
-    repair_cap   = int(cfg.get("Self-repair cap", "3"))
+    repair_cap   = int(cfg.get("Self-repair cap", "5"))
 
     knowledge_files = _knowledge_files_used(out)
 
