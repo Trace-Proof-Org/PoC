@@ -1,42 +1,21 @@
 # TraceProof: Autonomous Formal Verification & Bug Reproduction Pipeline
 
-> **"Deep where correctness matters, cheap where it doesn't."**  
-> TraceProof is an AI-orchestrated formal verification pipeline for distributed and concurrent software. It combines LLM-driven invariant mining with exhaustive TLA+ model checking, runtime trace validation, adversarial critique, and deterministic live bug reproduction.
-
 ---
 
 ## Table of Contents
-1. [The Problem TraceProof Solves](#1-the-problem-traceproof-solves)
-2. [High-Level Architecture](#2-high-level-architecture)
-3. [The 7 Pipeline Stages](#3-the-7-pipeline-stages)
-4. [Project Directory Layout](#4-project-directory-layout)
-5. [Prerequisites & Environment Setup](#5-prerequisites--environment-setup)
-6. [Quickstart Guide](#6-quickstart-guide)
-7. [CLI Reference](#7-cli-reference)
-8. [Concrete Walkthrough: Distributed Counter](#8-concrete-walkthrough-distributed-counter)
-9. [Artifacts & Verification Provenance](#9-artifacts--verification-provenance)
-10. [Design Philosophy & Scope Boundary](#10-design-philosophy--scope-boundary)
+1. [High-Level Architecture](#1-high-level-architecture)
+2. [The 7 Pipeline Stages](#2-the-7-pipeline-stages)
+3. [Project Directory Layout](#3-project-directory-layout)
+4. [Prerequisites & Environment Setup](#4-prerequisites--environment-setup)
+5. [Quickstart Guide](#5-quickstart-guide)
+6. [CLI Reference](#6-cli-reference)
+7. [Concrete Walkthrough: Distributed Counter](#7-concrete-walkthrough-distributed-counter)
+8. [Artifacts & Verification Provenance](#8-artifacts--verification-provenance)
+9. [Design Philosophy & Scope Boundary](#9-design-philosophy--scope-boundary)
 
 ---
 
-## 1. The Problem TraceProof Solves
-
-Concurrency bugs (race conditions, lost updates, deadlocks, and split-brain states) are notoriously difficult to detect and debug:
-- **Traditional Unit Testing Fails**: Race conditions depend on non-deterministic OS thread scheduling. Tests pass 99.9% of the time in CI and fail silently in production.
-- **LLM Hallucinations**: Standard LLMs trying to "eyeball" concurrent code produce high false-positive rates and invent impossible execution paths.
-- **Manual Formal Verification Doesn't Scale**: Writing formal specifications (TLA+, PlusCal) manually requires deep mathematical expertise and weeks of engineering time.
-
-### TraceProof's Hybrid Solution
-TraceProof bridges this gap by grounding LLM reasoning in **mathematical model checking** and **live runtime telemetry**:
-1. **LLMs mine invariants and draft models** cheaply.
-2. **TLA+ Model Checking (TLC)** explores millions of state transitions exhaustively.
-3. **Trace Validation** verifies that the formal model matches real code execution.
-4. **An Adversarial Critic** stress-tests the counterexample.
-5. **Deterministic Replay** reproduces the exact race interleaving against the live codebase to prove the bug empirically with **0% hallucination**.
-
----
-
-## 2. High-Level Architecture
+## 1. High-Level Architecture
 
 ```mermaid
 flowchart TD
@@ -61,7 +40,7 @@ flowchart TD
 
 ---
 
-## 3. The 7 Pipeline Stages
+## 2. The 7 Pipeline Stages
 
 ### Phase 1: Run Intake & Configuration (`shared/setup.py`)
 - Ingests source files, documentation, and configuration flags.
@@ -106,7 +85,7 @@ flowchart TD
 
 ---
 
-## 4. Project Directory Layout
+## 3. Project Directory Layout
 
 ```text
 PoC/
@@ -146,7 +125,7 @@ PoC/
 
 ---
 
-## 5. Prerequisites & Environment Setup
+## 4. Prerequisites & Environment Setup
 
 ### 1. Python Environment
 Python 3.10+ is required:
@@ -173,7 +152,7 @@ export GEMINI_API_KEY="your-api-key-here"
 
 ---
 
-## 6. Quickstart Guide
+## 5. Quickstart Guide
 
 To execute the entire 7-stage pipeline in one automated sweep:
 
@@ -192,7 +171,7 @@ To execute the entire 7-stage pipeline in one automated sweep:
 
 ---
 
-## 7. CLI Reference
+## 6. CLI Reference
 
 Individual phases can be executed modularly via `cli.py`:
 
@@ -208,7 +187,7 @@ Individual phases can be executed modularly via `cli.py`:
 
 ---
 
-## 8. Concrete Walkthrough: Distributed Counter
+## 7. Concrete Walkthrough: Distributed Counter
 
 ### The Target Code (`examples/dist_counter/counter.py`)
 ```python
@@ -259,7 +238,7 @@ Both nodes read initial value 0 concurrently before either wrote back.
 
 ---
 
-## 9. Artifacts & Verification Provenance
+## 8. Artifacts & Verification Provenance
 
 Every run generates an auditable paper trail inside `.traceproof-poc/`:
 
@@ -277,7 +256,7 @@ Every run generates an auditable paper trail inside `.traceproof-poc/`:
 
 ---
 
-## 10. Design Philosophy & Scope Boundary
+## 9. Design Philosophy & Scope Boundary
 
 1. **Detection & Scenario Delivery, Not Auto-Patching**:  
    TraceProof is designed to detect deep concurrency flaws and deliver the exact physical execution scenario required to trigger them. Remediation and architectural locking decisions remain with the software engineers who understand product trade-offs.
