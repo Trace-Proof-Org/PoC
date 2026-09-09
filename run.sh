@@ -16,7 +16,7 @@ FRESH=true                       # true = overwrite existing run-config.md
 # API key (only needed if PROVIDER != local)
 export TRACEPROOF_API_KEY=
 # MCP / TLC limits (only used in verify phase)
-export TLA_RS_MCP_COMMAND="/home/adham/.local/bin/tla-mcp"
+export TLA_RS_MCP_COMMAND="/usr/local/bin/tla-mcp"
 export TLA_RS_MAX_STATES=5000
 export TLA_RS_MAX_DEPTH=100
 export TLA_RS_MAX_SECONDS=30
