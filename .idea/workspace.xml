@@ -4,27 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c5678f49-af5e-4ed3-a83a-d8c2f2efa2ce" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.traceproof-poc/knowledge/README.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.traceproof-poc/knowledge/_index.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.traceproof-poc/knowledge/counter.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.traceproof-poc/knowledge/docs.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.traceproof-poc/model/base.cfg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.traceproof-poc/model/base.tla" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.traceproof-poc/model/generation-log.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.traceproof-poc/run-config.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/agents/spec_generator/prompts/.gitkeep" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/cli.py" beforeDir="false" afterPath="$PROJECT_DIR$/cli.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/generate_phase.py" beforeDir="false" afterPath="$PROJECT_DIR$/agents/spec_generator/generate.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index_phase.py" beforeDir="false" afterPath="$PROJECT_DIR$/agents/spec_generator/index.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/run.sh" beforeDir="false" afterPath="$PROJECT_DIR$/run.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/setup_phase.py" beforeDir="false" afterPath="$PROJECT_DIR$/shared/setup.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_verify.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_verify.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_phases.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/verify_phase.py" beforeDir="false" afterPath="$PROJECT_DIR$/agents/spec_generator/verify.py" afterDir="false" />
-    </list>
+    <list default="true" id="c5678f49-af5e-4ed3-a83a-d8c2f2efa2ce" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
