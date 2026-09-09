@@ -89,7 +89,7 @@ def _call_llm_json(provider: str, model: str, prompt: str) -> dict | None:
 
 def run_adversary_critique(
     output_dir: str | Path = ".traceproof-poc",
-    target_source: str | Path = "examples/dist_counter/counter.py",
+    target_source: str | Path = "examples/dist_lock",
     model: str | None = None,
 ) -> AdversarialResult:
     """Run the Adversarial Agent to critically evaluate the formal counterexample."""

@@ -40,11 +40,12 @@ def generate_diagnostic_report(
             pass
 
     verdict = repro_data.get("verdict", "CONFIRMED_REAL_BUG")
-    final_counter = repro_data.get("final_counter", 1)
-    expected_counter = repro_data.get("expected_counter", 2)
-    traceback_str = repro_data.get("error_traceback", "AssertionError: Lost update confirmed: counter=1, expected=2")
+    violations_detected = repro_data.get("violations_detected", 1)
+    details = repro_data.get("details", {})
+    final_storage = details.get("final_storage", ["Worker-1-write", "Worker-2-write"])
+    traceback_str = repro_data.get("error_traceback", "AssertionError: Mutual exclusion broken! Total violations detected: 1")
 
-    target_name = target_source or "examples/dist_counter/counter.py"
+    target_name = target_source or "examples/dist_lock"
     egypt_tz = timezone(timedelta(hours=3))
     timestamp = datetime.now(egypt_tz).strftime("%Y-%m-%d %H:%M:%S (UTC+3, Egypt Time)")
 
@@ -52,9 +53,9 @@ def generate_diagnostic_report(
         target_name=target_name,
         timestamp=timestamp,
         verdict=verdict,
-        final_counter=final_counter,
-        expected_counter=expected_counter,
+        violations_detected=violations_detected,
         traceback_str=traceback_str,
+        storage=final_storage,
     )
 
     report_file.write_text(report_content, encoding="utf-8")
