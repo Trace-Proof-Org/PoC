@@ -110,8 +110,7 @@ def acquire(worker_id: str, lease_duration: float = 1.0) -> bool:
     return False
 ```
 
-### The Safety Invariant:
-$$\text{MutualExclusion} \triangleq \text{Cardinality}(\text{active\_in\_cs}) \le 1$$
+
 
 ### The TLC Counterexample Schedule:
 ```mermaid
