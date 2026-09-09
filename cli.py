@@ -153,8 +153,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Model for classification (uses provider default if omitted).")
     p_run.add_argument("--scenario", metavar="TEXT", default=None,
                        help="Scenario to scope Phase 3 (optional).")
-    p_run.add_argument("--self-repair-cap", metavar="N", type=int, default=3,
-                       help="Max Phase 4 repair attempts (default: 3).")
+    p_run.add_argument("--self-repair-cap", metavar="N", type=int, default=5,
+                       help="Max Phase 4 repair attempts (default: 5).")
     p_run.add_argument("--notes", metavar="TEXT", default="",
                        help="Free-text notes stored in run-config.md.")
     p_run.add_argument("--fresh", action="store_true",

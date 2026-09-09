@@ -207,7 +207,7 @@ def setup_run(
     model_strong: str = "",
     model_cheap: str = "",
     scenario: str | None = None,
-    self_repair_cap: int = 3,
+    self_repair_cap: int = 5,
     notes: str = "",
     fresh: bool = False,
 ) -> Path:
