@@ -193,7 +193,7 @@ def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str]:
 
 # Self-repair via LLM
 # Credential resolution is centralised in setup_phase.
-from setup_phase import credential_present as _credential_present, get_api_key as _get_api_key, get_base_url as _get_base_url
+from shared.setup import credential_present as _credential_present, get_api_key as _get_api_key, get_base_url as _get_base_url
 
 
 def _repair_call(

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -150,7 +149,7 @@ def _group_by_module(
                     matched = True
                     break
             if not matched:
-                modules.setdefault("docs", {"code": [], "docs": []})
+                modules.setdefault("../../docs", {"code": [], "docs": []})
                 modules["docs"]["docs"].append(f)
 
     return modules
@@ -312,7 +311,7 @@ def _structural_extract(
 # LLM extraction (optional, falls back to structural if no key)
 
 # Credential resolution is centralised in setup_phase.
-from setup_phase import (
+from shared.setup import (
     credential_present as _credential_present,
     get_api_key as _get_api_key,
     get_base_url as _get_base_url,

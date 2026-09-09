@@ -9,7 +9,6 @@ Falls back to a deterministic structural spec when no LLM key is available.
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -137,7 +136,7 @@ def _read_last_cache_key(out: Path) -> str:
 # LLM draft
 
 # Credential resolution is centralised in setup_phase.
-from setup_phase import credential_present as _credential_present, get_api_key as _get_api_key, get_base_url as _get_base_url
+from shared.setup import credential_present as _credential_present, get_api_key as _get_api_key, get_base_url as _get_base_url
 
 
 def _build_prompt(

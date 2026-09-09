@@ -15,4 +15,5 @@ dev = ["pytest"]
 traceproof-poc = "cli:main"
 
 [tool.setuptools]
-py-modules = ["cli", "setup_phase", "index_phase", "generate_phase", "verify_phase"]
+packages = ["shared", "agents.spec_generator"]
+py-modules = ["cli"]

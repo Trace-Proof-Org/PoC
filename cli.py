@@ -8,17 +8,16 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 
 def cmd_options(args: argparse.Namespace) -> int:
-    from setup_phase import suggest_options
+    from shared.setup import suggest_options
     suggest_options(source=args.source[0] if args.source else None)
     return 0
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    from setup_phase import setup_run, SetupError
+    from shared.setup import setup_run, SetupError
     try:
         path = setup_run(
             source_paths=args.source,
@@ -42,7 +41,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_index(args: argparse.Namespace) -> int:
-    from index_phase import index_run, IndexError as IdxError
+    from agents.spec_generator.index import index_run, IndexError as IdxError
     try:
         index_run(output_dir=args.out)
     except IdxError as e:
@@ -53,7 +52,7 @@ def cmd_index(args: argparse.Namespace) -> int:
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
-    from generate_phase import generate_run, GenerateError
+    from agents.spec_generator.generate import generate_run, GenerateError
     try:
         generate_run(output_dir=args.out)
     except GenerateError as e:
@@ -62,20 +61,8 @@ def cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
-
 def cmd_verify(args: argparse.Namespace) -> int:
-    from verify_phase import verify_run, VerifyError
-    try:
-        verify_run(output_dir=args.out)
-    except VerifyError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
-    return 0
-
-
-
-def cmd_verify(args: argparse.Namespace) -> int:
-    from verify_phase import verify_run, VerifyError
+    from agents.spec_generator.verify import verify_run, VerifyError
     try:
         verify_run(output_dir=args.out)
     except VerifyError as e:
