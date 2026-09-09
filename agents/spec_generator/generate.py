@@ -464,6 +464,36 @@ def generate_run(output_dir: str | Path = ".traceproof-poc") -> tuple[Path, Path
         inv_lines = "\n".join(f"INVARIANT {n}" for n in inv_names[:4]) or "INVARIANT TypeOK"
         cfg = f"SPECIFICATION Spec\n{inv_lines}\nCONSTANTS\n  MaxSteps = 5\n"
 
+    # ── Syntax validation & self-repair loop via tla-mcp ──────────────────
+    try:
+        from agents.spec_generator.verify import _connect_tla_rs, _validate, _repair_call
+        client = _connect_tla_rs()
+        passed, errors = _validate(client, tla)
+        print(f"Syntax validation (tla-mcp): {'PASS' if passed else 'FAIL'}")
+
+        repair_count = 0
+        repair_cap = int(cfg_data.get("Self-repair cap", "3"))
+        while not passed and repair_count < repair_cap and use_llm:
+            print(f"  Self-repair attempt {repair_count + 1}/{repair_cap} using {model_strong}...")
+            fixed = _repair_call(tla, errors, provider, model_strong)
+            if not fixed:
+                break
+            repair_count += 1
+            fixed_tla, extra_cfg = _split_llm_output(fixed)
+            tla = fixed_tla
+            if extra_cfg:
+                cfg = extra_cfg
+            passed, errors = _validate(client, tla)
+            print(f"  Re-validation: {'PASS' if passed else 'FAIL'}")
+
+        if hasattr(client, "stop"):
+            client.stop()
+
+        if not passed:
+            print(f"warning: model has syntax issues after repair attempts: {errors}", file=sys.stderr)
+    except Exception as e:
+        print(f"warning: tla-mcp syntax check encountered an issue: {e}", file=sys.stderr)
+
     tla_p, cfg_p = _write_model(out, tla, cfg)
 
     # Invariants summary for the log

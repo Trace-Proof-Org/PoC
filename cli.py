@@ -61,6 +61,19 @@ def cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_trace_validate(args: argparse.Namespace) -> int:
+    from agents.trace_validator.validator import validate_trace_conformance
+    try:
+        res = validate_trace_conformance(output_dir=args.out, target_source=args.source)
+        if not res.passed:
+            print("Trace validation failed: model does not conform to code execution.", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from agents.spec_generator.verify import verify_run, VerifyError
     try:
@@ -128,8 +141,16 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Directory containing run-config.md (default: .traceproof-poc).")
     p_gen.set_defaults(func=cmd_generate)
 
+    # trace-validate
+    p_tv = sub.add_parser("trace-validate", help="Phase 4A — validate model-code conformance against real traces.")
+    p_tv.add_argument("--source", metavar="PATH", default="examples/dist_counter/counter.py",
+                       help="Source file to trace (default: examples/dist_counter/counter.py).")
+    p_tv.add_argument("--out", metavar="DIR", default=".traceproof-poc",
+                       help="Directory containing run-config.md (default: .traceproof-poc).")
+    p_tv.set_defaults(func=cmd_trace_validate)
+
     # verify
-    p_ver = sub.add_parser("verify", help="Phase 4 — tla-rs validate, model-check, export.")
+    p_ver = sub.add_parser("verify", help="Phase 4B — tla-rs validate, model-check, export.")
     p_ver.add_argument("--out", metavar="DIR", default=".traceproof-poc",
                        help="Directory containing run-config.md (default: .traceproof-poc).")
     p_ver.set_defaults(func=cmd_verify)
