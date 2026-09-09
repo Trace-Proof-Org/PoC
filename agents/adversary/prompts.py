@@ -49,11 +49,11 @@ Return ONLY a valid JSON object with these exact keys:
 
 FALLBACK_CRITIQUE: Dict[str, Any] = {
     "verdict": "CONFIRMED_BUG_CANDIDATE",
-    "confidence": 0.90,
-    "summary": "The model faithfully captures the non-atomic read-modify-write in increment(). No synchronization is present in the active code path.",
-    "invariant_critique": "NoLostUpdates is a fundamental correctness property for a shared counter. It correctly expects final counter to reflect all completed increments.",
-    "model_fidelity_critique": "The model accurately abstracts read_counter and the delayed counter assignment as separate atomic steps, which matches the un-synchronized implementation.",
-    "concurrency_critique": "The lost-update interleaving (Read -> Read -> Write -> Write) is a classic race condition and readily achievable with standard preemptive OS thread scheduling.",
-    "code_citations": ["counter.py:20 (increment)", "counter.py:30 (counter = val + 1)"],
-    "reproduction_guidance": "Spawn two threads calling increment(). Introduce a small artificial pause between read_counter and counter assignment to deterministically trigger lost update."
+    "confidence": 0.95,
+    "summary": "The model faithfully captures the lease expiration race condition in lock.py. Without fencing tokens or heartbeat extensions, an execution delay longer than the lease TTL allows a second worker to acquire the lock while the first worker is still active in the critical section.",
+    "invariant_critique": "MutualExclusion (Cardinality(active_in_cs) <= 1) is the essential safety property of any distributed locking mechanism.",
+    "model_fidelity_critique": "The model accurately reflects that acquire() checks lease expiration against wall-clock time without checking if the previous owner has actually completed execution.",
+    "concurrency_critique": "A thread experiencing a delay (e.g. GC pause, slow I/O) that exceeds the 1.0s lease duration while another thread acquires the lock is a classic, physically realizable distributed systems race condition.",
+    "code_citations": ["lock.py:31 (now >= lease_expiry)", "lock.py:59 (len(active_workers) > 1)"],
+    "reproduction_guidance": "Spawn Worker-1 with pause_duration=1.2s (> 1.0s lease). Sleep 1.05s, then spawn Worker-2. Both workers will execute concurrently in the critical section, triggering an invariant violation."
 }

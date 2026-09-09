@@ -1,8 +1,8 @@
 """Deterministic Bug Reproduction Agent.
 
 Parses formal verification counterexamples from TLC and synthesizes a
-deterministic runtime test harness (using threading barriers) to reproduce
-the race condition directly on the real Python codebase.
+deterministic runtime test harness to reproduce the race condition directly
+on the real Python codebase.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ class ReproductionResult:
     error_traceback: str
     test_script_path: str
     details: Dict[str, Any]
+    violations_detected: int = 0
 
 
 def parse_counterexample_from_manifest(manifest_path: Path) -> Optional[List[Dict[str, Any]]]:
@@ -39,7 +40,6 @@ def parse_counterexample_from_manifest(manifest_path: Path) -> Optional[List[Dic
     if "COUNTEREXAMPLE FOUND" not in content:
         return None
 
-    # Find JSON block after "### Counterexample"
     idx = content.find("### Counterexample")
     if idx == -1:
         return None
@@ -54,11 +54,7 @@ def parse_counterexample_from_manifest(manifest_path: Path) -> Optional[List[Dic
 
 
 def generate_test_harness(target_rel_path: str, repo_root: Path, out_file: Path) -> None:
-    """
-    Synthesizes a deterministic Python test script.
-    It hooks `counter.read_counter` using a threading.Barrier to force both
-    concurrent threads to read counter=0 before either can execute counter = val + 1.
-    """
+    """Synthesizes a deterministic Python test script."""
     out_file.parent.mkdir(parents=True, exist_ok=True)
     harness_code = build_harness_script(target_rel_path=target_rel_path, repo_root=repo_root)
     out_file.write_text(harness_code, encoding="utf-8")
@@ -74,9 +70,8 @@ def run_reproduction_test(test_path: Path) -> Dict[str, Any]:
 
     stdout = proc.stdout
     stderr = proc.stderr
-    combined = (stdout + "\n" + stderr).strip()
+    combined = f"{stdout}\n{stderr}".strip()
 
-    # Extract JSON payload if printed
     parsed_json: Dict[str, Any] = {}
     for line in stdout.splitlines():
         if line.startswith("TRACEPROOF_JSON_RESULT:"):
@@ -112,13 +107,13 @@ def confirm_bug(
     print("[reproducer] Inspecting model checker counterexample...")
     counterexample = parse_counterexample_from_manifest(manifest_path)
 
-    target_rel = "examples/dist_counter/counter.py"
+    target_rel = "examples/dist_lock/lock.py"
     if target_source:
         target_path = Path(target_source)
         if target_path.is_file():
             target_rel = str(target_path)
         elif target_path.is_dir():
-            py_files = list(target_path.glob("*.py"))
+            py_files = [p for p in target_path.glob("*.py") if p.name not in ("__init__.py",)]
             if py_files:
                 target_rel = str(py_files[0])
 
@@ -136,21 +131,23 @@ def confirm_bug(
     exec_res = run_reproduction_test(test_harness_path)
 
     json_data = exec_res.get("json_data", {})
+    violations_detected = json_data.get("violations_detected", 0)
     final_counter = json_data.get("final_counter")
     expected_counter = json_data.get("expected_counter")
-    reproduced = exec_res["assertion_failed"] or (final_counter is not None and final_counter != expected_counter)
 
+    reproduced = exec_res["assertion_failed"] or (violations_detected > 0)
     verdict = "CONFIRMED_REAL_BUG" if reproduced else "UNREPRODUCIBLE"
 
     if reproduced:
-        print(f"[reproducer] \033[92m✔ BUG CONFIRMED\033[0m: Expected counter={expected_counter}, but got counter={final_counter}!")
+        print(f"[reproducer] [92m✔ BUG CONFIRMED[0m: Mutual exclusion broken! Violations detected: {violations_detected}")
     else:
-        print(f"[reproducer] \033[93m✖ UNREPRODUCIBLE\033[0m: Test passed without triggering invariant failure.")
+        print(f"[reproducer] [93m✖ UNREPRODUCIBLE[0m: Test passed without triggering invariant failure.")
 
     result_data = {
         "target": target_rel,
         "reproduced": reproduced,
         "verdict": verdict,
+        "violations_detected": violations_detected,
         "final_counter": final_counter,
         "expected_counter": expected_counter,
         "test_script_path": str(test_harness_path),
@@ -172,4 +169,5 @@ def confirm_bug(
         error_traceback=result_data["error_traceback"],
         test_script_path=str(test_harness_path),
         details=result_data,
+        violations_detected=violations_detected,
     )
