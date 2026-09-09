@@ -278,6 +278,7 @@ def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str]:
 # Self-repair via LLM
 # Credential resolution is centralised in setup_phase.
 from shared.setup import credential_present as _credential_present, get_api_key as _get_api_key, get_base_url as _get_base_url
+from agents.spec_generator.prompts import build_syntax_repair_prompt
 
 
 def _repair_call(
@@ -291,17 +292,7 @@ def _repair_call(
         return None
 
     base_url = _get_base_url(provider)
-
-    prompt = f"""Fix the following TLA+ specification so it passes syntax validation.
-Apply ONLY the minimal targeted fix for the reported errors, do not rewrite the spec.
-Return ONLY the corrected TLA+ text, no explanation, no markdown fences.
-
-Errors from tla-rs:
-{errors}
-
-Current spec:
-{tla_text}
-"""
+    prompt = build_syntax_repair_prompt(tla_text, errors)
     try:
         if provider == "anthropic":
             import urllib.request

@@ -137,45 +137,10 @@ def _read_last_cache_key(out: Path) -> str:
 
 # Credential resolution is centralised in setup_phase.
 from shared.setup import credential_present as _credential_present, get_api_key as _get_api_key, get_base_url as _get_base_url
-
-
-def _build_prompt(
-    selected: list[tuple[str, str]],
-    scenario: str | None,
-) -> str:
-    knowledge_block = ""
-    for mod, text in selected:
-        knowledge_block += f"\n\n--- knowledge/{mod}.md ---\n{text[:3000]}"
-
-    scenario_line = (
-        f'Scenario: "{scenario}"' if scenario
-        else f'Module-scoped run (no scenario): model the primary module "{selected[0][0]}".'
-    )
-
-    return f"""You are a TLA+/PlusCal spec assistant. Draft a TLA+ specification for model checking.
-
-{scenario_line}
-
-Knowledge cache:
-{knowledge_block}
-
-Requirements:
-1. Use PlusCal algorithm syntax inside a TLA+ MODULE named "base".
-2. Include Init and Next predicates (or PlusCal translates them).
-3. Define at least one INVARIANT for each candidate invariant in the knowledge files.
-4. Add inline comments citing the knowledge file for every non-trivial guard, e.g.:
-   \\* Source: knowledge/{selected[0][0]}.md, "<invariant text>"
-5. Keep the spec small and checkable, a PoC, not a complete model.
-6. Output ONLY the raw TLA+ text (no markdown fences, no explanation).
-   Start with: ---- MODULE base ----
-
-Also output a base.cfg after a line "====CFG====":
-SPECIFICATION Spec
-INVARIANT <InvariantName1>
-INVARIANT <InvariantName2>
-CONSTANTS
-  <ConstantName> = <small_value>
-"""
+from agents.spec_generator.prompts import (
+    build_draft_prompt as _build_prompt,
+    build_local_lint_fix_prompt,
+)
 
 
 def _call_llm(provider: str, model: str, prompt: str) -> str | None:
@@ -264,14 +229,7 @@ def _lint_fix_with_llm(
     provider: str,
     model: str,
 ) -> str | None:
-    fix_prompt = f"""The following TLA+ spec has lint errors. Fix them and return ONLY the corrected TLA+ text.
-
-Errors:
-{chr(10).join(f'- {e}' for e in errors)}
-
-Spec:
-{tla_text}
-"""
+    fix_prompt = build_local_lint_fix_prompt(tla_text, errors)
     return _call_llm(provider, model, fix_prompt)
 
 
