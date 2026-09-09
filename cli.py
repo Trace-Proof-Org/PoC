@@ -100,6 +100,22 @@ def cmd_adversary(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reproduce(args: argparse.Namespace) -> int:
+    from agents.bug_reproducer.reproducer import confirm_bug
+    from agents.bug_reproducer.reporter import generate_diagnostic_report
+    try:
+        res = confirm_bug(output_dir=args.out, target_source=args.source)
+        report_path = generate_diagnostic_report(output_dir=args.out, target_source=args.source)
+        print(f"[reproducer] Complete. Final Report: {report_path}")
+        if not res.reproduced:
+            print("[reproducer] Warning: Bug was not reproduced on real code.", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _not_implemented(phase: str):
     def _cmd(_args: argparse.Namespace) -> int:
         print(f"error: phase '{phase}' is not yet implemented.", file=sys.stderr)
@@ -180,6 +196,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_adv.add_argument("--model", metavar="MODEL", default=None,
                        help="Specific LLM model to use for the adversary critique.")
     p_adv.set_defaults(func=cmd_adversary)
+
+    # reproduce
+    p_rep = sub.add_parser("reproduce", help="Phase 7 — Bug Confirmation & Diagnostic Report.")
+    p_rep.add_argument("--source", metavar="PATH", default="examples/dist_counter/counter.py",
+                       help="Source file (default: examples/dist_counter/counter.py).")
+    p_rep.add_argument("--out", metavar="DIR", default=".traceproof-poc",
+                       help="Directory containing run-config.md (default: .traceproof-poc).")
+    p_rep.set_defaults(func=cmd_reproduce)
 
     return parser
 

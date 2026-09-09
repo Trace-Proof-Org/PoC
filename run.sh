@@ -15,7 +15,7 @@ NOTES=""                         # freeform notes
 FRESH=true                       # true = overwrite existing run-config.md
 
 # API key (only needed if PROVIDER != local)
-export TRACEPROOF_API_KEY=""
+export TRACEPROOF_API_KEY="YOUR_API_KEY_HERE"
 # MCP / TLC limits (only used in verify phase)
 export TLA_RS_MCP_COMMAND="/usr/local/bin/tla-mcp"
 export TLA_RS_MAX_STATES=5000
@@ -29,6 +29,7 @@ RUN_GENERATE=true
 RUN_TRACE_VALIDATE=true
 RUN_VERIFY=true     # requires tla-mcp binary installed
 RUN_ADVERSARY=true  # Adversarial Refinement Agent (Critic)
+RUN_REPRODUCE=true  # Bug Confirmation Agent & Diagnostic Report
 # ---------------------------------------------------------------
 
 CLI="python3 cli.py"   # or: CLI="python3 cli.py"
@@ -84,6 +85,12 @@ fi
 if [ "${RUN_ADVERSARY:-true}" = true ]; then
   echo "-- Phase 6: adversarial refinement (critic) --"
   $CLI adversary --source "${SOURCE[0]}" --out "$OUT" --model "${MODEL_ADVERSARY:-$MODEL_STRONG}"
+  echo
+fi
+
+if [ "${RUN_REPRODUCE:-true}" = true ]; then
+  echo "-- Phase 7: bug confirmation & diagnostic report --"
+  $CLI reproduce --source "${SOURCE[0]}" --out "$OUT"
   echo
 fi
 
