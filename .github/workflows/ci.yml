@@ -37,7 +37,7 @@ jobs:
       - name: Install tla-mcp binary
         if: steps.cache-tla-mcp.outputs.cache-hit != 'true'
         run: |
-          cargo install --git https://github.com/fabracht/tla-rs tla-mcp --locked || cargo install --git https://github.com/fabracht/tla-rs tla-mcp
+          cargo install --git https://github.com/fabracht/tla-rs --bin tla-mcp --locked || cargo install --git https://github.com/fabracht/tla-rs --bin tla-mcp
 
       - name: Add Cargo bin to PATH
         run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
