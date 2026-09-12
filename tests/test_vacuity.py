@@ -4,6 +4,7 @@ Covers all 11 test fixtures addressing Mentor Issue #4 (EricSpencer00).
 """
 
 import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -521,6 +522,127 @@ INVARIANT Inv
 """
             corr = check_implementation_correspondence(simple_py, tla, cfg)
             self.assertTrue(any("No concurrency primitives" in w for w in corr.warnings))
+
+    # --------------------------------------------------------------------------
+    # Fixture 14: Missing State Variable Rejection (Hard Failure in Gate 3)
+    # --------------------------------------------------------------------------
+    def test_fixture_missing_state_variable_rejected(self):
+        """
+        Tests that Gate 3 strictly rejects a specification that omits required
+        state variables (e.g. storage or lease_expiry), even if action names match.
+        """
+        # Spec preserves action names but omits 'storage' and 'lease_expiry'
+        incomplete_vars_tla = """---- MODULE MissingVars ----
+VARIABLES current_owner, active_workers
+Init == current_owner = "none" /\\ active_workers = {}
+Acquire(w) == current_owner = "none" /\\ current_owner' = w /\\ active_workers' = active_workers \\cup {w}
+Release(w) == current_owner = w /\\ current_owner' = "none" /\\ active_workers' = active_workers \\ {w}
+DoWork(w) == current_owner = w /\\ UNCHANGED <<current_owner, active_workers>>
+ExpireLease == current_owner' = "none" /\\ UNCHANGED <<active_workers>>
+Next == \\E w \\in {"w1", "w2"}: Acquire(w) \\/ Release(w) \\/ DoWork(w) \\/ ExpireLease
+Inv == Cardinality(active_workers) <= 1
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        stats = {"distinct_states": 6, "transitions": 10}
+        report = evaluate_spec_vacuity(
+            tla_text=incomplete_vars_tla,
+            cfg_text=cfg,
+            target_source=self.lock_target,
+            tlc_stats=stats,
+            tlc_raw_output="6 distinct states. Transitions: Acquire, Release, DoWork, ExpireLease.",
+        )
+        self.assertFalse(report.passed)
+        self.assertIn("UNFAITHFUL_MODEL", report.verdict)
+        self.assertTrue(any("storage" in f.lower() or "lease_expiry" in f.lower() for f in report.hard_gates_failed))
+
+    # --------------------------------------------------------------------------
+    # Fixture 15: Documented Exclusion Mechanism Allows Intentional Variable Omission
+    # --------------------------------------------------------------------------
+    def test_fixture_missing_state_variable_explicitly_excluded(self):
+        """
+        Tests that when an unmodeled state variable is explicitly excluded via
+        the documented exclusion comment (* @exclude_vars: ...), Gate 3 accepts it.
+        """
+        excluded_vars_tla = """---- MODULE ExcludedVars ----
+\\* @exclude_vars: storage, lease_expiry
+VARIABLES current_owner, active_workers
+Init == current_owner = "none" /\\ active_workers = {}
+Acquire(w) == current_owner = "none" /\\ current_owner' = w /\\ active_workers' = active_workers \\cup {w}
+Release(w) == current_owner = w /\\ current_owner' = "none" /\\ active_workers' = active_workers \\ {w}
+DoWork(w) == current_owner = w /\\ UNCHANGED <<current_owner, active_workers>>
+ExpireLease == current_owner' = "none" /\\ UNCHANGED <<active_workers>>
+Next == \\E w \\in {"w1", "w2"}: Acquire(w) \\/ Release(w) \\/ DoWork(w) \\/ ExpireLease
+Inv == Cardinality(active_workers) <= 1
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        corr = check_implementation_correspondence(self.lock_target, excluded_vars_tla, cfg)
+        self.assertNotIn("storage", corr.missing_vars)
+        self.assertNotIn("lease_expiry", corr.missing_vars)
+        self.assertIn("current_owner", corr.matched_vars)
+        self.assertIn("active_workers", corr.matched_vars)
+
+    # --------------------------------------------------------------------------
+    # Fixture 16: Directory Source Path Resolution (No IsADirectoryError)
+    # --------------------------------------------------------------------------
+    def test_fixture_directory_source_resolution(self):
+        """
+        Tests that specifying a directory (e.g. examples/dist_lock) as target_source
+        resolves to the Python file(s) inside without crashing with IsADirectoryError.
+        """
+        dist_lock_dir = Path("examples/dist_lock")
+        self.assertTrue(dist_lock_dir.is_dir())
+
+        tla = """---- MODULE DirModel ----
+VARIABLES current_owner, active_workers, lease_expiry, storage
+Init == current_owner = "none" /\\ active_workers = {} /\\ lease_expiry = 0 /\\ storage = <<>>
+Acquire(w) == current_owner = "none" /\\ current_owner' = w /\\ UNCHANGED <<active_workers, lease_expiry, storage>>
+Release(w) == current_owner = w /\\ current_owner' = "none" /\\ UNCHANGED <<active_workers, lease_expiry, storage>>
+DoWork(w) == current_owner = w /\\ UNCHANGED <<current_owner, active_workers, lease_expiry, storage>>
+ExpireLease == lease_expiry = 0 /\\ UNCHANGED <<current_owner, active_workers, storage>>
+Next == \\E w \\in {"w1", "w2"}: Acquire(w) \\/ Release(w) \\/ DoWork(w) \\/ ExpireLease
+Inv == Cardinality(active_workers) <= 1
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        # Passing directory directly to check_implementation_correspondence
+        corr = check_implementation_correspondence(dist_lock_dir, tla, cfg)
+        self.assertEqual(corr.missing_actions, [])
+        self.assertEqual(corr.missing_vars, [])
+        self.assertIn("current_owner", corr.matched_vars)
+
+    # --------------------------------------------------------------------------
+    # Fixture 17: Multiple Source Paths Resolution & Merging
+    # --------------------------------------------------------------------------
+    def test_fixture_multiple_source_paths_resolution(self):
+        """
+        Tests that multiple source paths are parsed and merged into a unified
+        token representation.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            f1 = Path(tmpdir) / "part1.py"
+            f1.write_text("lock_owner = 'none'\ndef acquire(): pass\n")
+            f2 = Path(tmpdir) / "part2.py"
+            f2.write_text("queue_buffer = []\ndef release(): pass\n")
+
+            from agents.spec_generator.vacuity import PythonSourceExtractor
+            extractor = PythonSourceExtractor([f1, f2])
+            tokens = extractor.extract()
+
+            self.assertIn("acquire", tokens.public_functions)
+            self.assertIn("release", tokens.public_functions)
+            self.assertIn("lock_owner", tokens.concurrency_primitives)
+            self.assertIn("queue_buffer", tokens.concurrency_primitives)
 
 
 if __name__ == "__main__":
