@@ -238,7 +238,43 @@ INVARIANT Inv
             tla, cfg, client=client, tlc_stats=stats, tlc_raw_output="4 distinct states"
         )
         self.assertFalse(report.passed)
-        self.assertTrue(any("survived without violating invariant" in f or "Zero applicable action guard mutants" in f for f in report.hard_gates_failed))
+        self.assertTrue(any("GuardMutationSurvivor" in f and "Acquire" in f for f in report.hard_gates_failed))
+
+    def test_fixture_partial_mutation_survivor_rejected(self):
+        """
+        Tests that Gate 5 strictly requires a 100% kill rate and rejects
+        a model where 1 mutant is killed and 1 mutant survives (50% kill rate).
+        """
+        def mock_checker(args):
+            spec = args.get("spec", "")
+            if "MutantNegated_" in spec:
+                return {"status": "counterexample", "raw": "violation"}
+            # Release mutant survives (status ok), Acquire mutant is killed (counterexample)
+            if "Release(w) == TRUE /\\" in spec:
+                return {"status": "ok", "stats": {"distinct_states": 5}, "raw": "ok"}
+            return {"status": "counterexample", "raw": "violation"}
+
+        client = MockTlaClient(check_handler=mock_checker)
+        tla = """---- MODULE PartialSurvivor ----
+VARIABLES owner, active
+Init == owner = "none" /\\ active = {}
+Acquire(w) == owner = "none" /\\ owner' = w /\\ active' = active \\cup {w}
+Release(w) == owner = w /\\ owner' = "none" /\\ active' = active \\ {w}
+Next == \\E w \\in {"w1", "w2"}: Acquire(w) \\/ Release(w)
+Inv == owner # "both"
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        stats = {"distinct_states": 6, "transitions": 10}
+        report = evaluate_spec_vacuity(
+            tla, cfg, client=client, tlc_stats=stats, tlc_raw_output="6 distinct states"
+        )
+        self.assertFalse(report.passed)
+        self.assertIn("VERIFIER_FAIL (VACUOUS_SPEC)", report.verdict)
+        self.assertTrue(any("GuardMutationSurvivor" in f and "Release" in f and "50%" in f for f in report.hard_gates_failed))
 
     # --------------------------------------------------------------------------
     # Fixture 8: Unbounded Vacuous Invariant (Inv == x >= -10^9 caught by ~Inv)
