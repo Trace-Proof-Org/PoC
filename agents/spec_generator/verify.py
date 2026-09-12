@@ -409,9 +409,9 @@ def _export(
 - **Diagnostic Warnings**:
 {warn_list}
 
-### Semantic Implementation Fidelity (LLM-as-a-Judge Supporting Evidence)
+### Structural Implementation Correspondence
 - **Confidence Score**: {rlaif_conf}
-- **Audit Reasoning**: {rlaif_notes}
+- **Structural Correspondence Analysis**: {rlaif_notes}
 """
 
     kf_list = "\n".join(f"- {f}" for f in knowledge_files) or "- (none recorded)"
@@ -540,6 +540,7 @@ def verify_run(
     output_dir: str | Path = ".traceproof-poc",
     *,
     client: TlaRsClient | None = None,  # injectable for tests
+    allow_constant_spec: bool = False,
 ) -> Path:
     """
     Phase 4 entry point.
@@ -682,7 +683,12 @@ def verify_run(
         # Step 2.5: Non-Vacuity & Implementation Correspondence Gatekeeper
         vacuity_report = None
         if check_outcome == "pass":
-            allow_constant_spec = os.environ.get("TRACEPROOF_ALLOW_CONSTANT_SPEC", "").lower() in ("1", "true", "yes")
+            if not allow_constant_spec:
+                allow_constant_spec = os.environ.get("TRACEPROOF_ALLOW_CONSTANT_SPEC", "").lower() in ("1", "true", "yes")
+
+            max_states = int(os.environ.get("TLA_RS_MAX_STATES", "500"))
+            max_depth = int(os.environ.get("TLA_RS_MAX_DEPTH", "20"))
+            max_seconds = int(os.environ.get("TLA_RS_MAX_SECONDS", "30"))
 
             vacuity_report = evaluate_spec_vacuity(
                 tla_text=tla_text,
@@ -694,6 +700,9 @@ def verify_run(
                 allow_constant_spec=allow_constant_spec,
                 in_scope_scenario=scenario,
                 excluded_vars=excluded_vars,
+                max_states=max_states,
+                max_depth=max_depth,
+                max_seconds=max_seconds,
             )
 
             if not vacuity_report.passed:

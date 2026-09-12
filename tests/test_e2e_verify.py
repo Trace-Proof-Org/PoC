@@ -6,6 +6,7 @@ Demonstrates:
 3. An unfaithful spec (missing critical action) is strictly rejected by verify_run.
 """
 
+import os
 import shutil
 import tempfile
 import unittest
@@ -20,6 +21,9 @@ class TestLiveE2EVerify(unittest.TestCase):
         self.repo_root = Path(__file__).resolve().parents[1]
         self.lock_py = self.repo_root / "examples" / "dist_lock" / "lock.py"
         self.has_tla_mcp = bool(shutil.which("tla-mcp") or Path("/usr/local/bin/tla-mcp").exists())
+        self.require_live = os.environ.get("TRACEPROOF_REQUIRE_LIVE_CHECKER", "").lower() in ("1", "true", "yes")
+        if self.require_live and not self.has_tla_mcp:
+            self.fail("tla-mcp binary is required by TRACEPROOF_REQUIRE_LIVE_CHECKER=1, but was not found.")
 
     def test_e2e_clean_spec_passes_live_tla_rs(self):
         if not self.has_tla_mcp:
@@ -90,7 +94,7 @@ INVARIANT MutualExclusion
             manifest_content = manifest_path.read_text()
             self.assertIn("VERIFIED_NON_VACUOUS_PASS_WITH_CORRESPONDENCE", manifest_content)
             self.assertIn("Gatekeeper Verdict", manifest_content)
-            self.assertIn("LLM-as-a-Judge Supporting Evidence", manifest_content)
+            self.assertIn("Structural Implementation Correspondence", manifest_content)
             self.assertIn("AST Tautology Check", manifest_content)
             self.assertIn("Config Completeness", manifest_content)
             self.assertIn("Implementation Correspondence", manifest_content)

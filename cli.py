@@ -77,7 +77,7 @@ def cmd_trace_validate(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     from agents.spec_generator.verify import verify_run, VerifyError
     try:
-        verify_run(output_dir=args.out)
+        verify_run(output_dir=args.out, allow_constant_spec=getattr(args, "allow_constant_spec", False))
     except VerifyError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -185,6 +185,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_ver = sub.add_parser("verify", help="Phase 4B — tla-rs validate, model-check, export.")
     p_ver.add_argument("--out", metavar="DIR", default=".traceproof-poc",
                        help="Directory containing run-config.md (default: .traceproof-poc).")
+    p_ver.add_argument("--allow-constant-spec", action="store_true", default=False,
+                       help="Allow constant / non-reactive specification verification without dynamic state space.")
     p_ver.set_defaults(func=cmd_verify)
 
     # adversary
