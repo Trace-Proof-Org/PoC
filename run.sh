@@ -15,7 +15,7 @@ NOTES=""                         # freeform notes
 FRESH=true                       # true = overwrite existing run-config.md
 
 # API key (only needed if PROVIDER != local)
-export TRACEPROOF_API_KEY="AQ.Ab8RN6KIpdhQLkwdL77nlK9FEUKtNju9ZCOjvFMx1j38D7IRNQ"
+export TRACEPROOF_API_KEY="YOUR_API_KEY_HERE"
 # MCP / TLC limits (only used in verify phase)
 export TLA_RS_MCP_COMMAND="/usr/local/bin/tla-mcp"
 export TLA_RS_MAX_STATES=5000
@@ -47,51 +47,71 @@ build_run_args() {
   echo "${args[@]}"
 }
 
-echo "== TraceProof PoC run =="
-echo "Provider: $PROVIDER | Out: $OUT | Scenario: ${SCENARIO:-<none>}"
+phase_banner() {
+  local num="$1"
+  local name="$2"
+  echo -e "\033[1;36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m"
+  echo -e "\033[1;36m│ [PHASE $num] $name\033[0m"
+  echo -e "\033[1;36m└──────────────────────────────────────────────────────────────────────────────┘\033[0m"
+}
+
+echo -e "\033[1;35m================================================================================\033[0m"
+echo -e "\033[1;35m  TraceProof Formal Verification & Bug Reproduction Pipeline                    \033[0m"
+echo -e "\033[1;35m================================================================================\033[0m"
+echo -e "  • Provider:  \033[1m$PROVIDER\033[0m (Strong: ${MODEL_STRONG:-default}, Cheap: ${MODEL_CHEAP:-default})"
+echo -e "  • Output:    \033[1m$OUT\033[0m"
+echo -e "  • Scenario:  \033[1m${SCENARIO:-<module-scoped run>}\033[0m"
+echo -e "  • Target(s): \033[1m${SOURCE[*]}\033[0m"
 echo
 
 if [ "$RUN_SETUP" = true ]; then
-  echo "-- Phase 1: run --"
+  phase_banner "1/7" "Run Setup & Configuration Ingestion"
   # shellcheck disable=SC2046
   $CLI run $(build_run_args)
   echo
 fi
 
 if [ "$RUN_INDEX" = true ]; then
-  echo "-- Phase 2: index --"
+  phase_banner "2/7" "Codebase & Documentation AST Indexing"
   $CLI index --out "$OUT"
   echo
 fi
 
 if [ "$RUN_GENERATE" = true ]; then
-  echo "-- Phase 3: generate --"
+  phase_banner "3/7" "TLA+ Model Drafting & Invariant Generation"
   $CLI generate --out "$OUT"
   echo
 fi
 
 if [ "${RUN_TRACE_VALIDATE:-true}" = true ]; then
-  echo "-- Phase 4: trace validation (model-code conformance) --"
+  phase_banner "4/7" "Trace Conformance Validation (Model-Code Trace Check)"
   $CLI trace-validate --source "${SOURCE[0]}" --out "$OUT"
   echo
 fi
 
 if [ "$RUN_VERIFY" = true ]; then
-  echo "-- Phase 5: model checking (invariant exploration) --"
+  phase_banner "5/7" "Formal Verification & Non-Vacuity Gatekeeper (TLC / tla-rs)"
   $CLI verify --out "$OUT"
   echo
 fi
 
 if [ "${RUN_ADVERSARY:-true}" = true ]; then
-  echo "-- Phase 6: adversarial refinement (critic) --"
+  phase_banner "6/7" "Adversarial Refinement (Critic Agent)"
   $CLI adversary --source "${SOURCE[0]}" --out "$OUT" --model "${MODEL_ADVERSARY:-$MODEL_STRONG}"
   echo
 fi
 
 if [ "${RUN_REPRODUCE:-true}" = true ]; then
-  echo "-- Phase 7: bug confirmation & diagnostic report --"
+  phase_banner "7/7" "Runtime Bug Reproducer & Final Diagnostic Report"
   $CLI reproduce --source "${SOURCE[0]}" --out "$OUT"
   echo
 fi
 
-echo "== Done. Artifacts in $OUT/ =="
+echo -e "\033[1;32m================================================================================\033[0m"
+echo -e "\033[1;32m  ✔ TraceProof Pipeline Execution Complete                                      \033[0m"
+echo -e "\033[1;32m================================================================================\033[0m"
+echo -e "  • Run Config:   \033[1m$OUT/run-config.md\033[0m"
+echo -e "  • Model Files:  \033[1m$OUT/model/base.tla\033[0m, \033[1m$OUT/model/base.cfg\033[0m"
+echo -e "  • Manifest:     \033[1m$OUT/export/manifest.md\033[0m"
+[ -f "$OUT/reports/diagnostic-report.md" ] && echo -e "  • Diagnostics:  \033[1m$OUT/reports/diagnostic-report.md\033[0m"
+echo
