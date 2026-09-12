@@ -4,6 +4,7 @@ Covers all 11 test fixtures addressing Mentor Issue #4 (EricSpencer00).
 """
 
 import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -15,6 +16,9 @@ from agents.spec_generator.vacuity import (
     ImplementationCorrespondenceError,
     DeadCoreActionError,
     MutationSurvivorError,
+    InconclusiveMutationError,
+    _generic_name_match,
+    extract_cfg_invariants,
     evaluate_spec_vacuity,
     check_ast_tautology,
     check_config_completeness,
@@ -238,7 +242,43 @@ INVARIANT Inv
             tla, cfg, client=client, tlc_stats=stats, tlc_raw_output="4 distinct states"
         )
         self.assertFalse(report.passed)
-        self.assertTrue(any("survived without violating invariant" in f or "Zero applicable action guard mutants" in f for f in report.hard_gates_failed))
+        self.assertTrue(any("GuardMutationSurvivor" in f and "Acquire" in f for f in report.hard_gates_failed))
+
+    def test_fixture_partial_mutation_survivor_rejected(self):
+        """
+        Tests that Gate 5 strictly requires a 100% kill rate and rejects
+        a model where 1 mutant is killed and 1 mutant survives (50% kill rate).
+        """
+        def mock_checker(args):
+            spec = args.get("spec", "")
+            if "MutantNegated_" in spec:
+                return {"status": "counterexample", "raw": "violation"}
+            # Release mutant survives (status ok), Acquire mutant is killed (counterexample)
+            if "Release(w) == TRUE /\\" in spec:
+                return {"status": "ok", "stats": {"distinct_states": 5}, "raw": "ok"}
+            return {"status": "counterexample", "raw": "violation"}
+
+        client = MockTlaClient(check_handler=mock_checker)
+        tla = """---- MODULE PartialSurvivor ----
+VARIABLES owner, active
+Init == owner = "none" /\\ active = {}
+Acquire(w) == owner = "none" /\\ owner' = w /\\ active' = active \\cup {w}
+Release(w) == owner = w /\\ owner' = "none" /\\ active' = active \\ {w}
+Next == \\E w \\in {"w1", "w2"}: Acquire(w) \\/ Release(w)
+Inv == owner # "both"
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        stats = {"distinct_states": 6, "transitions": 10}
+        report = evaluate_spec_vacuity(
+            tla, cfg, client=client, tlc_stats=stats, tlc_raw_output="6 distinct states"
+        )
+        self.assertFalse(report.passed)
+        self.assertIn("VERIFIER_FAIL (VACUOUS_SPEC)", report.verdict)
+        self.assertTrue(any("GuardMutationSurvivor" in f and "Release" in f and "50%" in f for f in report.hard_gates_failed))
 
     # --------------------------------------------------------------------------
     # Fixture 8: Unbounded Vacuous Invariant (Inv == x >= -10^9 caught by ~Inv)
@@ -288,6 +328,43 @@ INVARIANT Inv
         self.assertEqual(len(res.dead_core_actions), 0)
         self.assertEqual(len(res.warnings), 1)
         self.assertIn("Tick", res.warnings[0])
+        self.assertTrue(res.coverage_available)
+
+    def test_fixture_per_action_coverage_catches_dead_action_with_many_states(self):
+        """
+        Tests that when per-action evidence is present, a permanently disabled
+        core action is rejected with DeadCoreActionError even if distinct_states is large (e.g. 50).
+        """
+        from agents.spec_generator.vacuity import DeadCoreActionError
+        stats = {"distinct_states": 50, "transitions": 120}
+        raw = "50 distinct states. Transitions: Acquire."
+
+        with self.assertRaises(DeadCoreActionError) as ctx:
+            check_state_exploration(
+                stats, raw, core_actions=["Acquire", "Release"]
+            )
+        self.assertIn("Release", str(ctx.exception))
+
+    def test_fixture_per_action_coverage_unavailable_reported(self):
+        """
+        Tests that when the model checker only reports aggregate Next transitions
+        without per-action breakdown, coverage is explicitly reported as unavailable
+        rather than falsely marking disabled actions as exercised.
+        """
+        stats = {
+            "distinct_states": 42,
+            "transitions": 89,
+            "actions": [{"name": "Next", "transitions": 89}],
+        }
+        raw = '{"status": "ok", "stats": {"distinct_states": 42, "transitions": 89}}'
+
+        res = check_state_exploration(
+            stats, raw, core_actions=["Acquire", "Release", "DoWork"]
+        )
+        self.assertFalse(res.coverage_available)
+        self.assertEqual(res.exercised_core_actions, [])
+        self.assertEqual(res.dead_core_actions, [])
+        self.assertTrue(any("unavailable" in w.lower() for w in res.warnings))
 
     # --------------------------------------------------------------------------
     # Fixture 10: Counterexample vs. Verifier Fail Distinction
@@ -448,6 +525,306 @@ INVARIANT Inv
 """
             corr = check_implementation_correspondence(simple_py, tla, cfg)
             self.assertTrue(any("No concurrency primitives" in w for w in corr.warnings))
+
+    # --------------------------------------------------------------------------
+    # Fixture 14: Missing State Variable Rejection (Hard Failure in Gate 3)
+    # --------------------------------------------------------------------------
+    def test_fixture_missing_state_variable_rejected(self):
+        """
+        Tests that Gate 3 strictly rejects a specification that omits required
+        state variables (e.g. storage or lease_expiry), even if action names match.
+        """
+        # Spec preserves action names but omits 'storage' and 'lease_expiry'
+        incomplete_vars_tla = """---- MODULE MissingVars ----
+VARIABLES current_owner, active_workers
+Init == current_owner = "none" /\\ active_workers = {}
+Acquire(w) == current_owner = "none" /\\ current_owner' = w /\\ active_workers' = active_workers \\cup {w}
+Release(w) == current_owner = w /\\ current_owner' = "none" /\\ active_workers' = active_workers \\ {w}
+DoWork(w) == current_owner = w /\\ UNCHANGED <<current_owner, active_workers>>
+ExpireLease == current_owner' = "none" /\\ UNCHANGED <<active_workers>>
+Next == \\E w \\in {"w1", "w2"}: Acquire(w) \\/ Release(w) \\/ DoWork(w) \\/ ExpireLease
+Inv == Cardinality(active_workers) <= 1
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        stats = {"distinct_states": 6, "transitions": 10}
+        report = evaluate_spec_vacuity(
+            tla_text=incomplete_vars_tla,
+            cfg_text=cfg,
+            target_source=self.lock_target,
+            tlc_stats=stats,
+            tlc_raw_output="6 distinct states. Transitions: Acquire, Release, DoWork, ExpireLease.",
+        )
+        self.assertFalse(report.passed)
+        self.assertIn("UNFAITHFUL_MODEL", report.verdict)
+        self.assertTrue(any("storage" in f.lower() or "lease_expiry" in f.lower() for f in report.hard_gates_failed))
+
+    # --------------------------------------------------------------------------
+    # Fixture 15: Documented Exclusion Mechanism Allows Intentional Variable Omission
+    # --------------------------------------------------------------------------
+    def test_fixture_missing_state_variable_explicitly_excluded(self):
+        """
+        Tests that when an unmodeled state variable is explicitly excluded via
+        the documented exclusion comment (* @exclude_vars: ...), Gate 3 accepts it.
+        """
+        excluded_vars_tla = """---- MODULE ExcludedVars ----
+\\* @exclude_vars: storage, lease_expiry
+VARIABLES current_owner, active_workers
+Init == current_owner = "none" /\\ active_workers = {}
+Acquire(w) == current_owner = "none" /\\ current_owner' = w /\\ active_workers' = active_workers \\cup {w}
+Release(w) == current_owner = w /\\ current_owner' = "none" /\\ active_workers' = active_workers \\ {w}
+DoWork(w) == current_owner = w /\\ UNCHANGED <<current_owner, active_workers>>
+ExpireLease == current_owner' = "none" /\\ UNCHANGED <<active_workers>>
+Next == \\E w \\in {"w1", "w2"}: Acquire(w) \\/ Release(w) \\/ DoWork(w) \\/ ExpireLease
+Inv == Cardinality(active_workers) <= 1
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        corr = check_implementation_correspondence(self.lock_target, excluded_vars_tla, cfg)
+        self.assertNotIn("storage", corr.missing_vars)
+        self.assertNotIn("lease_expiry", corr.missing_vars)
+        self.assertIn("current_owner", corr.matched_vars)
+        self.assertIn("active_workers", corr.matched_vars)
+
+    # --------------------------------------------------------------------------
+    # Fixture 16: Directory Source Path Resolution (No IsADirectoryError)
+    # --------------------------------------------------------------------------
+    def test_fixture_directory_source_resolution(self):
+        """
+        Tests that specifying a directory (e.g. examples/dist_lock) as target_source
+        resolves to the Python file(s) inside without crashing with IsADirectoryError.
+        """
+        dist_lock_dir = Path("examples/dist_lock")
+        self.assertTrue(dist_lock_dir.is_dir())
+
+        tla = """---- MODULE DirModel ----
+VARIABLES current_owner, active_workers, lease_expiry, storage
+Init == current_owner = "none" /\\ active_workers = {} /\\ lease_expiry = 0 /\\ storage = <<>>
+Acquire(w) == current_owner = "none" /\\ current_owner' = w /\\ UNCHANGED <<active_workers, lease_expiry, storage>>
+Release(w) == current_owner = w /\\ current_owner' = "none" /\\ UNCHANGED <<active_workers, lease_expiry, storage>>
+DoWork(w) == current_owner = w /\\ UNCHANGED <<current_owner, active_workers, lease_expiry, storage>>
+ExpireLease == lease_expiry = 0 /\\ UNCHANGED <<current_owner, active_workers, storage>>
+Next == \\E w \\in {"w1", "w2"}: Acquire(w) \\/ Release(w) \\/ DoWork(w) \\/ ExpireLease
+Inv == Cardinality(active_workers) <= 1
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        # Passing directory directly to check_implementation_correspondence
+        corr = check_implementation_correspondence(dist_lock_dir, tla, cfg)
+        self.assertEqual(corr.missing_actions, [])
+        self.assertEqual(corr.missing_vars, [])
+        self.assertIn("current_owner", corr.matched_vars)
+
+    # --------------------------------------------------------------------------
+    # Fixture 17: Multiple Source Paths Resolution & Merging
+    # --------------------------------------------------------------------------
+    def test_fixture_multiple_source_paths_resolution(self):
+        """
+        Tests that multiple source paths are parsed and merged into a unified
+        token representation.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            f1 = Path(tmpdir) / "part1.py"
+            f1.write_text("lock_owner = 'none'\ndef acquire(): pass\n")
+            f2 = Path(tmpdir) / "part2.py"
+            f2.write_text("queue_buffer = []\ndef release(): pass\n")
+
+            from agents.spec_generator.vacuity import PythonSourceExtractor
+            extractor = PythonSourceExtractor([f1, f2])
+            tokens = extractor.extract()
+
+            self.assertIn("acquire", tokens.public_functions)
+            self.assertIn("release", tokens.public_functions)
+            self.assertIn("lock_owner", tokens.concurrency_primitives)
+            self.assertIn("queue_buffer", tokens.concurrency_primitives)
+
+    # --------------------------------------------------------------------------
+    # Fixture 18: Multiple INVARIANT Declarations in CFG
+    # --------------------------------------------------------------------------
+    def test_fixture_multiple_invariants_in_cfg_detects_vacuous_second_invariant(self):
+        """
+        Tests that check_ast_tautology parses and validates ALL declared invariants
+        in .cfg, catching a vacuous invariant even if the first invariant is clean.
+        """
+        cfg = """INIT Init
+NEXT Next
+INVARIANT ValidInv
+INVARIANT VacuousInv
+"""
+        tla = """---- MODULE MultiInv ----
+VARIABLES x
+Init == x = 0
+Next == x' = x + 1
+ValidInv == x >= 0
+VacuousInv == TRUE
+====
+"""
+        invariants = extract_cfg_invariants(cfg)
+        self.assertEqual(invariants, ["ValidInv", "VacuousInv"])
+
+        with self.assertRaises(VacuousInvariantError) as ctx:
+            check_ast_tautology(tla, cfg)
+        self.assertIn("VacuousInv", str(ctx.exception))
+        self.assertIn("trivial literal TRUE", str(ctx.exception))
+
+    # --------------------------------------------------------------------------
+    # Fixture 19: Nonexistent Target Source Fails Closed
+    # --------------------------------------------------------------------------
+    def test_fixture_nonexistent_target_source_fails_closed(self):
+        """
+        Tests that when a nonexistent target source file is supplied, Gate 3
+        fails closed by raising ImplementationCorrespondenceError rather than
+        silently passing with 100% confidence.
+        """
+        tla = """---- MODULE FailClosed ----
+VARIABLES owner
+Init == owner = "none"
+Next == owner' = "w1"
+Inv == owner # "none"
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        with self.assertRaises(ImplementationCorrespondenceError) as ctx:
+            check_implementation_correspondence("/nonexistent/path/does_not_exist.py", tla, cfg)
+        self.assertIn("does not exist", str(ctx.exception))
+
+    # --------------------------------------------------------------------------
+    # Fixture 20: Missing Client Yields Incomplete Verification Verdict
+    # --------------------------------------------------------------------------
+    def test_fixture_evaluate_spec_vacuity_client_none_incomplete_verdict(self):
+        """
+        Tests that evaluate_spec_vacuity does NOT award a verified pass when client=None,
+        instead returning passed=False with INCOMPLETE_VERIFICATION (UNCHECKED_MUTATIONS).
+        """
+        tla = """---- MODULE ClientNone ----
+VARIABLES owner
+Init == owner = "none"
+Next == owner' = "w1"
+Inv == owner # "bad"
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        stats = {"distinct_states": 2, "transitions": 1}
+        report = evaluate_spec_vacuity(
+            tla, cfg, client=None, tlc_stats=stats, tlc_raw_output="2 distinct states"
+        )
+        self.assertFalse(report.passed)
+        self.assertEqual(report.verdict, "INCOMPLETE_VERIFICATION (UNCHECKED_MUTATIONS)")
+        self.assertTrue(any("Gate 5 Skipped" in f for f in report.hard_gates_failed))
+
+    # --------------------------------------------------------------------------
+    # Fixture 21: Strict Structural Identifier Matching
+    # --------------------------------------------------------------------------
+    def test_fixture_strict_identifier_matching(self):
+        """
+        Tests that _generic_name_match strictly requires normalized sequence equality
+        or legitimate verb qualification, while strictly rejecting loose single-word overlap.
+        """
+        # Exact canonical and case conversions match
+        self.assertTrue(_generic_name_match("do_work", "DoWork"))
+        self.assertTrue(_generic_name_match("current_holder", "CurrentHolder"))
+        self.assertTrue(_generic_name_match("acquire_lock", "Acquire"))
+        self.assertTrue(_generic_name_match("release_lock", "Release"))
+
+        # Loose single-word overlap must be rejected
+        self.assertFalse(_generic_name_match("worker", "do_work"))
+        self.assertFalse(_generic_name_match("worker_status", "Worker_Kill"))
+        self.assertFalse(_generic_name_match("work", "worker"))
+
+        # Disjoint concurrency verbs must never match
+        self.assertFalse(_generic_name_match("acquire", "release"))
+        self.assertFalse(_generic_name_match("lock", "unlock"))
+        self.assertFalse(_generic_name_match("enqueue", "dequeue"))
+
+    # --------------------------------------------------------------------------
+    # Fixture 22: Mutation Exploration Limit Yields Inconclusive Verdict
+    # --------------------------------------------------------------------------
+    def test_fixture_mutation_exploration_limit_inconclusive(self):
+        """
+        Tests that if TLC hits an exploration limit during mutation checking,
+        it is treated as inconclusive rather than a survivor.
+        """
+        def mock_checker(args):
+            spec = args.get("spec", "")
+            if "MutantNegated_" in spec:
+                return {"status": "limit_reached", "raw": "Limit reached after 500 states"}
+            return {"status": "counterexample", "raw": "violation"}
+
+        client = MockTlaClient(check_handler=mock_checker)
+        tla = """---- MODULE LimitSpec ----
+VARIABLES owner
+Init == owner = "none"
+Acquire(w) == owner = "none" /\\ owner' = w
+Next == \\E w \\in {"w1", "w2"}: Acquire(w)
+Inv == owner # "both"
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        stats = {"distinct_states": 10, "transitions": 20}
+        report = evaluate_spec_vacuity(
+            tla, cfg, client=client, tlc_stats=stats, tlc_raw_output="10 distinct states"
+        )
+        self.assertFalse(report.passed)
+        self.assertEqual(report.verdict, "VERIFIER_FAIL (INCONCLUSIVE_VERIFICATION)")
+        self.assertTrue(any("Inconclusive" in f for f in report.hard_gates_failed))
+
+    # --------------------------------------------------------------------------
+    # Fixture 23: Invariant Negation Counterexample Depth Zero Rejected
+    # --------------------------------------------------------------------------
+    def test_fixture_invariant_negation_depth_zero_rejected(self):
+        """
+        Tests that if TLC reports an invariant violation at the initial state
+        (trace length 1, depth 0), Gate 5 rejects it as failing to constrain transitions.
+        """
+        def mock_checker(args):
+            spec = args.get("spec", "")
+            if "MutantNegated_" in spec:
+                # 1-state counterexample trace (depth 0, no transitions taken)
+                return {
+                    "status": "counterexample",
+                    "counterexample": [{"vars": {"owner": "none"}}],
+                    "raw": "violation at initial state",
+                }
+            return {"status": "counterexample", "raw": "violation"}
+
+        client = MockTlaClient(check_handler=mock_checker)
+        tla = """---- MODULE DepthZero ----
+VARIABLES owner
+Init == owner = "none"
+Acquire(w) == owner = "none" /\\ owner' = w
+Next == \\E w \\in {"w1", "w2"}: Acquire(w)
+Inv == owner # "both"
+====
+"""
+        cfg = """INIT Init
+NEXT Next
+INVARIANT Inv
+"""
+        stats = {"distinct_states": 4, "transitions": 6}
+        report = evaluate_spec_vacuity(
+            tla, cfg, client=client, tlc_stats=stats, tlc_raw_output="4 distinct states"
+        )
+        self.assertFalse(report.passed)
+        self.assertIn("VERIFIER_FAIL (VACUOUS_SPEC)", report.verdict)
+        self.assertTrue(any("depth >= 1" in f for f in report.hard_gates_failed))
 
 
 if __name__ == "__main__":
