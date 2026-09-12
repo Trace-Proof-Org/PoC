@@ -763,10 +763,13 @@ def check_dual_mutation(
     total_mutants = applicable_testable_mutants
     kill_rate = round(mutants_killed / max(1, total_mutants), 2) if total_mutants > 0 else 1.0
 
-    if total_mutants > 0 and mutants_killed == 0:
+    if survivors:
+        survivor_names = ", ".join(survivors)
         raise MutationSurvivorError(
-            f"[MUTATION REJECT: GuardMutationSurvivor] Zero applicable action guard mutants were killed "
-            f"by invariant '{inv_name}' (Kill Rate: 0%). The invariant does not constrain action guards."
+            f"[MUTATION REJECT: GuardMutationSurvivor] {len(survivors)} of {total_mutants} applicable action guard mutant(s) "
+            f"survived TLC model checking for invariant '{inv_name}' "
+            f"(Kill Rate: {int(kill_rate * 100)}%, Survivors: [{survivor_names}]). "
+            f"Every applicable action guard must be constrained by the invariant (100% kill rate required)."
         )
 
     return MutationReport(
