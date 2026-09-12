@@ -153,50 +153,98 @@ class VacuityReport:
 class PythonSourceExtractor:
     """
     General AST visitor for extracting mutable state, synchronization primitives,
-    and public entry points from any Python source file without hardcoded domain lists.
+    and public entry points from any Python source file, directory of files, or
+    list of source paths without hardcoded domain lists.
     """
 
-    def __init__(self, source_path: Path | str, in_scope_scenario: Optional[str] = None) -> None:
-        self.path = Path(source_path)
-        self.source_code = self.path.read_text(encoding="utf-8")
-        self.tree = ast.parse(self.source_code, filename=str(self.path))
+    def __init__(self, source_path: Path | str | List[Path | str], in_scope_scenario: Optional[str] = None) -> None:
+        self.raw_source = source_path
         self.in_scope_scenario = in_scope_scenario
+        self.paths: List[Path] = []
+
+        if isinstance(source_path, (list, tuple)):
+            raw_list = list(source_path)
+        else:
+            raw_list = [source_path]
+
+        for p_item in raw_list:
+            if not p_item:
+                continue
+            p = Path(p_item)
+            if p.is_dir():
+                py_files = sorted([
+                    f for f in p.glob("*.py")
+                    if not f.name.startswith("test_") and not f.name.endswith("_test.py") and not f.name.startswith("__")
+                ])
+                self.paths.extend(py_files)
+            elif p.is_file():
+                self.paths.append(p)
+            elif p.exists():
+                self.paths.append(p)
 
     def extract(self) -> PythonSourceTokens:
         global_vars: Dict[str, str] = {}
         class_attributes: List[str] = []
         public_functions: List[str] = []
         global_mutated_vars: Set[str] = set()
+        temporal_events: List[str] = []
+        action_sources: Dict[str, str] = {}
 
-        # 1. Module-level variables & classes
-        for node in self.tree.body:
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and not target.id.startswith("__"):
-                        val_repr = ast.unparse(node.value) if hasattr(ast, "unparse") else "expr"
-                        global_vars[target.id] = val_repr
-            elif isinstance(node, ast.AnnAssign):
-                if isinstance(node.target, ast.Name) and not node.target.id.startswith("__"):
-                    ann_repr = ast.unparse(node.annotation) if hasattr(ast, "unparse") else "ann"
-                    global_vars[node.target.id] = ann_repr
+        for path in self.paths:
+            source_code = path.read_text(encoding="utf-8")
+            tree = ast.parse(source_code, filename=str(path))
 
-            elif isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
-                public_functions.append(node.name)
+            # 1. Module-level variables & classes
+            for node in tree.body:
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name) and not target.id.startswith("__"):
+                            val_repr = ast.unparse(node.value) if hasattr(ast, "unparse") else "expr"
+                            global_vars[target.id] = val_repr
+                elif isinstance(node, ast.AnnAssign):
+                    if isinstance(node.target, ast.Name) and not node.target.id.startswith("__"):
+                        ann_repr = ast.unparse(node.annotation) if hasattr(ast, "unparse") else "ann"
+                        global_vars[node.target.id] = ann_repr
 
-            elif isinstance(node, ast.ClassDef):
-                for item in node.body:
-                    if isinstance(item, ast.FunctionDef):
-                        if not item.name.startswith("_"):
-                            public_functions.append(item.name)
-                        for subnode in ast.walk(item):
-                            if isinstance(subnode, ast.Attribute) and isinstance(subnode.value, ast.Name) and subnode.value.id == "self":
-                                if subnode.attr not in class_attributes and not subnode.attr.startswith("__"):
-                                    class_attributes.append(subnode.attr)
+                elif isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+                    if node.name not in public_functions:
+                        public_functions.append(node.name)
+                    action_sources[node.name] = node.name
 
-        # 2. Track which variables are explicitly mutated across functions (via 'global' statement)
-        for node in ast.walk(self.tree):
-            if isinstance(node, ast.Global):
-                global_mutated_vars.update(node.names)
+                elif isinstance(node, ast.ClassDef):
+                    for item in node.body:
+                        if isinstance(item, ast.FunctionDef):
+                            if not item.name.startswith("_"):
+                                if item.name not in public_functions:
+                                    public_functions.append(item.name)
+                                action_sources[item.name] = f"{node.name}.{item.name}"
+                            for subnode in ast.walk(item):
+                                if isinstance(subnode, ast.Attribute) and isinstance(subnode.value, ast.Name) and subnode.value.id == "self":
+                                    if subnode.attr not in class_attributes and not subnode.attr.startswith("__"):
+                                        class_attributes.append(subnode.attr)
+
+            # 2. Track which variables are explicitly mutated across functions
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Global):
+                    global_mutated_vars.update(node.names)
+
+            # 3. Detect temporal transitions / timeouts / delays in code generically
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    func_name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+                    if func_name in ("sleep", "wait", "timeout"):
+                        # Code uses temporal delays / timeouts
+                        for var in list(class_attributes) + list(global_vars.keys()):
+                            var_lower = var.lower()
+                            if any(k in var_lower for k in ("expiry", "expire", "timeout", "deadline", "ttl", "lease")):
+                                clean_stem = re.sub(r"(_?expiry|_?timeout|_?deadline|_?ttl|_?expire)", "", var_lower).strip("_")
+                                temporal_name = f"expire_{clean_stem}" if clean_stem else "expire"
+                                if temporal_name not in temporal_events:
+                                    temporal_events.append(temporal_name)
+                                    action_sources[temporal_name] = var
+                        if not temporal_events and "timeout" not in temporal_events:
+                            temporal_events.append("timeout")
+                            action_sources["timeout"] = "time.sleep"
 
         # Concurrency state primitives: global variables mutated in code + class instance attributes
         concurrency_primitives: List[str] = list(class_attributes)
@@ -205,36 +253,15 @@ class PythonSourceExtractor:
                 if gvar not in concurrency_primitives:
                     concurrency_primitives.append(gvar)
 
-        # 3. Detect temporal transitions / timeouts / delays in code generically
-        temporal_events: List[str] = []
-        action_sources: Dict[str, str] = {fn: fn for fn in public_functions}
-
-        for node in ast.walk(self.tree):
-            if isinstance(node, ast.Call):
-                func_name = getattr(node.func, "attr", getattr(node.func, "id", ""))
-                if func_name in ("sleep", "wait", "timeout"):
-                    # Code uses temporal delays / timeouts
-                    # Check if there is an expiry or timeout variable
-                    for var in concurrency_primitives:
-                        var_lower = var.lower()
-                        if any(k in var_lower for k in ("expiry", "expire", "timeout", "deadline", "ttl", "lease")):
-                            clean_stem = re.sub(r"(_?expiry|_?timeout|_?deadline|_?ttl|_?expire)", "", var_lower).strip("_")
-                            temporal_name = f"expire_{clean_stem}" if clean_stem else "expire"
-                            if temporal_name not in temporal_events:
-                                temporal_events.append(temporal_name)
-                                action_sources[temporal_name] = var
-                    if not temporal_events and "timeout" not in temporal_events:
-                        temporal_events.append("timeout")
-                        action_sources["timeout"] = "time.sleep"
-
         # 4. Core actions: scenario-in-scope functions + temporal events
         core_actions = list(public_functions)
         for te in temporal_events:
             if te.lower() not in [a.lower() for a in core_actions]:
                 core_actions.append(te)
 
+        target_display = ", ".join(str(p) for p in self.paths) if self.paths else str(self.raw_source)
         return PythonSourceTokens(
-            target_path=str(self.path),
+            target_path=target_display,
             global_vars=global_vars,
             class_attributes=class_attributes,
             public_functions=public_functions,
@@ -415,38 +442,91 @@ def extract_tla_actions(tla_text: str) -> List[str]:
     return [c for c in dict.fromkeys(candidates) if c not in excluded]
 
 
+DEFAULT_EXCLUDED_VAR_PATTERNS = {
+    "violations_detected",
+    "assertion_failures",
+    "test_counter",
+    "debug_log",
+    "metrics",
+    "telemetry",
+}
+
+
+def _extract_excluded_vars(
+    tla_text: str,
+    cfg_text: str,
+    user_excluded: Optional[List[str]] = None,
+) -> Set[str]:
+    """
+    Extracts explicitly excluded variable names from:
+    1. TLA+ comments: \\* @exclude_vars: var1, var2 or \\* EXCLUDE_VARS: ...
+    2. Config comments/directives: # @exclude_vars: ...
+    3. User-supplied exclusion list
+    4. Default documented test harness instrumentation counters
+    """
+    excluded = set(DEFAULT_EXCLUDED_VAR_PATTERNS)
+    if user_excluded:
+        excluded.update(v.lower().strip() for v in user_excluded)
+
+    # Search TLA+ comments for \* @exclude_vars: ... or \* EXCLUDE_VARS: ...
+    for m in re.finditer(r"\\\*\s*@?exclude_vars?\s*:\s*([^\n]+)", tla_text, re.IGNORECASE):
+        for var in m.group(1).split(","):
+            var_clean = var.strip().lower()
+            if var_clean:
+                excluded.add(var_clean)
+
+    for m in re.finditer(r"#\s*@?exclude_vars?\s*:\s*([^\n]+)", cfg_text, re.IGNORECASE):
+        for var in m.group(1).split(","):
+            var_clean = var.strip().lower()
+            if var_clean:
+                excluded.add(var_clean)
+
+    return excluded
+
+
 def check_implementation_correspondence(
-    target_source: str | Path,
+    target_source: str | Path | List[str | Path],
     tla_text: str,
     cfg_text: str,
     in_scope_scenario: Optional[str] = None,
+    excluded_vars: Optional[List[str]] = None,
 ) -> CorrespondenceReport:
     """
     Gate 3: Matches Python AST primitives against TLA+ VARIABLES and Next actions.
-    Emits an LLM Semantic Fidelity Assessment report (supporting evidence).
+    Treats missing required state variables and missing core actions as hard rejections.
+    Supports documented variable exclusion via '\\* @exclude_vars: var1, var2' in TLA+
+    or 'Excluded variables:' in run-config.md.
     """
-    path = Path(target_source)
-    if not path.exists():
-        return CorrespondenceReport({}, [], {}, [], 1.0, "Source file not found; skipped.")
-
-    extractor = PythonSourceExtractor(path, in_scope_scenario=in_scope_scenario)
+    extractor = PythonSourceExtractor(target_source, in_scope_scenario=in_scope_scenario)
     tokens = extractor.extract()
 
+    if not extractor.paths:
+        return CorrespondenceReport({}, [], {}, [], 1.0, "Source file(s) not found; skipped.")
+
+    path_display = tokens.target_path
     corr_warnings: List[str] = []
     if not tokens.concurrency_primitives:
         corr_warnings.append(
-            f"No concurrency primitives (locks, threading, shared mutable state) detected in Python target '{path.name}'. "
+            f"No concurrency primitives (locks, threading, shared mutable state) detected in Python target '{path_display}'. "
             f"Implementation correspondence check will only validate public entry points."
         )
 
     declared_tla_vars = extract_declared_variables(tla_text)
     tla_actions = extract_tla_actions(tla_text)
 
+    # Resolve excluded state variables (documented exclusion mechanism)
+    effective_excluded_vars = _extract_excluded_vars(tla_text, cfg_text, user_excluded=excluded_vars)
+
+    required_vars = [
+        prim for prim in tokens.concurrency_primitives
+        if prim.lower() not in effective_excluded_vars
+    ]
+
     # Match variables
     matched_vars: Dict[str, str] = {}
     missing_vars: List[str] = []
 
-    for prim in tokens.concurrency_primitives:
+    for prim in required_vars:
         match = None
         for orig in declared_tla_vars:
             if _generic_name_match(prim, orig):
@@ -455,8 +535,7 @@ def check_implementation_correspondence(
         if match:
             matched_vars[prim] = match
         else:
-            if prim in tokens.global_vars or prim in tokens.class_attributes:
-                missing_vars.append(prim)
+            missing_vars.append(prim)
 
     # Match core actions
     matched_actions: Dict[str, str] = {}
@@ -473,6 +552,20 @@ def check_implementation_correspondence(
         else:
             missing_actions.append(act)
 
+    # Hard Gate: If an in-scope required state variable is completely omitted
+    if missing_vars:
+        diag_lines = []
+        for v in missing_vars:
+            expected_tla = "".join(w.capitalize() for w in re.findall(r"[A-Za-z0-9]+", v))
+            diag_lines.append(f"Source: '{v}' → Missing TLA+ variable: '{expected_tla}'")
+        diag_str = "\n  • ".join(diag_lines)
+        raise ImplementationCorrespondenceError(
+            f"[CORRESPONDENCE REJECT] In-scope state variable(s) from Python implementation {path_display} "
+            f"are missing in TLA+ VARIABLES declaration:\n  • {diag_str}\n"
+            f"(Declared TLA+ variables: {declared_tla_vars}; To exclude test/instrumentation variables, "
+            f"use '\\* @exclude_vars: {', '.join(missing_vars)}' in the spec or 'Excluded variables:' in run-config.md)"
+        )
+
     # Hard Gate: If an in-scope required concurrency action is completely omitted
     if missing_actions:
         diagnostic_lines = []
@@ -486,17 +579,17 @@ def check_implementation_correspondence(
 
         diag_str = "\n  • ".join(diagnostic_lines)
         raise ImplementationCorrespondenceError(
-            f"[CORRESPONDENCE REJECT] In-scope action(s) from Python implementation {path.name} "
+            f"[CORRESPONDENCE REJECT] In-scope action(s) from Python implementation {path_display} "
             f"are missing in TLA+ Next operator:\n  • {diag_str}\n(Modeled actions in Next: {tla_actions})"
         )
 
-    total_expected = len(tokens.core_actions) + len(tokens.concurrency_primitives)
+    total_expected = len(tokens.core_actions) + len(required_vars)
     total_matched = len(matched_actions) + len(matched_vars)
     confidence = round(min(1.0, total_matched / max(1, total_expected)), 2)
 
     reasoning = (
-        f"Verified implementation correspondence for target {path.name}: "
-        f"Matched {len(matched_vars)}/{len(tokens.concurrency_primitives)} state primitives "
+        f"Verified implementation correspondence for target {path_display}: "
+        f"Matched {len(matched_vars)}/{len(required_vars)} state primitives "
         f"and {len(matched_actions)}/{len(tokens.core_actions)} in-scope actions. "
         f"The TLA+ model structurally corresponds to the target code."
     )
@@ -874,12 +967,13 @@ def check_dual_mutation(
 def evaluate_spec_vacuity(
     tla_text: str,
     cfg_text: str,
-    target_source: Optional[str | Path] = None,
+    target_source: Optional[str | Path | List[str | Path]] = None,
     client: Any = None,
     tlc_stats: Optional[Dict[str, Any]] = None,
     tlc_raw_output: str = "",
     allow_constant_spec: bool = False,
     in_scope_scenario: Optional[str] = None,
+    excluded_vars: Optional[List[str]] = None,
 ) -> VacuityReport:
     """
     Main entry point for Phase 5 Non-Vacuity & Implementation Correspondence.
@@ -927,7 +1021,7 @@ def evaluate_spec_vacuity(
     if target_source:
         try:
             corr_report = check_implementation_correspondence(
-                target_source, tla_text, cfg_text, in_scope_scenario=in_scope_scenario
+                target_source, tla_text, cfg_text, in_scope_scenario=in_scope_scenario, excluded_vars=excluded_vars
             )
             warnings.extend(corr_report.warnings)
             core_actions = list(corr_report.matched_actions.values())

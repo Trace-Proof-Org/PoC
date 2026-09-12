@@ -499,6 +499,42 @@ def _step_line(num_label: str, name: str, status: str, width: int = 76) -> str:
     return f"{left}{dots}{right}"
 
 
+def resolve_source_paths(src_raw: str, root_dir: Optional[Path] = None) -> List[Path]:
+    """
+    Resolves a comma-separated list of files or directories to concrete Python files.
+    If a path is a directory, discovers all top-level .py files (excluding test_*.py, *_test.py).
+    """
+    if not src_raw or src_raw.strip().lower() in ("none", ""):
+        return []
+
+    root = root_dir or Path.cwd()
+    resolved: List[Path] = []
+
+    for raw_part in src_raw.split(","):
+        p_str = raw_part.strip()
+        if not p_str:
+            continue
+        p = Path(p_str)
+        if not p.is_absolute():
+            p = (root / p).resolve()
+
+        if p.is_file() and p.suffix == ".py":
+            if p not in resolved:
+                resolved.append(p)
+        elif p.is_dir():
+            py_files = sorted([
+                f for f in p.glob("*.py")
+                if not f.name.startswith("test_") and not f.name.endswith("_test.py") and not f.name.startswith("__")
+            ])
+            for py_f in py_files:
+                if py_f not in resolved:
+                    resolved.append(py_f)
+        elif p.exists():
+            resolved.append(p)
+
+    return resolved
+
+
 # Public API
 def verify_run(
     output_dir: str | Path = ".traceproof-poc",
@@ -533,13 +569,18 @@ def verify_run(
     if client is None:
         client = _connect_tla_rs()
 
-    # Resolve target source for reporting
+    # Resolve target source paths (directories and multiple paths)
     src_raw = cfg.get("Source paths", "") or cfg.get("Source file(s)", "")
-    target_source = None
-    if src_raw and src_raw.lower() != "none":
-        candidates = [p.strip() for p in src_raw.split(",") if p.strip()]
-        if candidates:
-            target_source = candidates[0]
+    resolved_sources = resolve_source_paths(src_raw, root_dir=Path.cwd())
+    if resolved_sources:
+        target_source = [str(p) for p in resolved_sources] if len(resolved_sources) > 1 else str(resolved_sources[0])
+        target_display = ", ".join(str(p) for p in resolved_sources)
+    else:
+        target_source = None
+        target_display = src_raw or "<none>"
+
+    raw_excluded = cfg.get("Excluded variables", "") or cfg.get("Exclude vars", "")
+    excluded_vars = [v.strip() for v in raw_excluded.split(",") if v.strip()] if raw_excluded else None
 
     try:
         tla_text = tla_path.read_text()
@@ -652,12 +693,13 @@ def verify_run(
                 tlc_raw_output=tlc_raw,
                 allow_constant_spec=allow_constant_spec,
                 in_scope_scenario=scenario,
+                excluded_vars=excluded_vars,
             )
 
             if not vacuity_report.passed:
                 _log_verify(out, repair_count, syntax_pass, "verifier_fail (vacuous_spec)", vacuity_report.diagnostic_details)
                 box_lines = [
-                    f"Target:  {target_source or '<none>'}",
+                    f"Target:  {target_display}",
                     f"Spec:    {tla_path.name} (config: {cfg_path.name})",
                     "---",
                     _step_line("1/3", "Syntax Validation & Self-Repair", "PASS"),
@@ -701,7 +743,7 @@ def verify_run(
         # Render and display final verification summary box
         if check_outcome == "pass" and vacuity_report is not None:
             box_lines = [
-                f"Target:  {target_source or '<none>'}",
+                f"Target:  {target_display}",
                 f"Spec:    {tla_path.name} (config: {cfg_path.name})",
                 "---",
                 _step_line("1/3", "Syntax Validation & Self-Repair", "PASS"),
