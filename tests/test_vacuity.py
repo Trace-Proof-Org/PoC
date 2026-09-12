@@ -324,6 +324,43 @@ INVARIANT Inv
         self.assertEqual(len(res.dead_core_actions), 0)
         self.assertEqual(len(res.warnings), 1)
         self.assertIn("Tick", res.warnings[0])
+        self.assertTrue(res.coverage_available)
+
+    def test_fixture_per_action_coverage_catches_dead_action_with_many_states(self):
+        """
+        Tests that when per-action evidence is present, a permanently disabled
+        core action is rejected with DeadCoreActionError even if distinct_states is large (e.g. 50).
+        """
+        from agents.spec_generator.vacuity import DeadCoreActionError
+        stats = {"distinct_states": 50, "transitions": 120}
+        raw = "50 distinct states. Transitions: Acquire."
+
+        with self.assertRaises(DeadCoreActionError) as ctx:
+            check_state_exploration(
+                stats, raw, core_actions=["Acquire", "Release"]
+            )
+        self.assertIn("Release", str(ctx.exception))
+
+    def test_fixture_per_action_coverage_unavailable_reported(self):
+        """
+        Tests that when the model checker only reports aggregate Next transitions
+        without per-action breakdown, coverage is explicitly reported as unavailable
+        rather than falsely marking disabled actions as exercised.
+        """
+        stats = {
+            "distinct_states": 42,
+            "transitions": 89,
+            "actions": [{"name": "Next", "transitions": 89}],
+        }
+        raw = '{"status": "ok", "stats": {"distinct_states": 42, "transitions": 89}}'
+
+        res = check_state_exploration(
+            stats, raw, core_actions=["Acquire", "Release", "DoWork"]
+        )
+        self.assertFalse(res.coverage_available)
+        self.assertEqual(res.exercised_core_actions, [])
+        self.assertEqual(res.dead_core_actions, [])
+        self.assertTrue(any("unavailable" in w.lower() for w in res.warnings))
 
     # --------------------------------------------------------------------------
     # Fixture 10: Counterexample vs. Verifier Fail Distinction

@@ -113,6 +113,7 @@ class StateExplorationReport:
     exercised_core_actions: List[str]
     dead_core_actions: List[str]
     warnings: List[str]
+    coverage_available: bool = True
 
 
 @dataclass
@@ -515,6 +516,67 @@ def check_implementation_correspondence(
 # Gate 4: State Exploration & Tiered Action Coverage
 # ==============================================================================
 
+def _extract_per_action_evidence(
+    tlc_stats: Optional[Dict[str, Any]],
+    raw_output: str,
+    all_expected_actions: Set[str],
+) -> Optional[Dict[str, int]]:
+    """
+    Extracts per-action transition counts if the model checker emitted
+    per-action exploration evidence. Returns None if per-action coverage is unavailable.
+    """
+    evidence: Dict[str, int] = {}
+
+    # 1. Check structured tlc_stats["actions"]
+    if tlc_stats and isinstance(tlc_stats, dict):
+        actions_list = tlc_stats.get("actions", [])
+        if isinstance(actions_list, list) and actions_list:
+            # Only treat as per-action evidence if it breaks down actions beyond aggregate "Next" / "Init"
+            sub_actions = [
+                a for a in actions_list
+                if isinstance(a, dict) and a.get("name") and a.get("name") not in ("Next", "Init", None)
+            ]
+            if sub_actions:
+                for a in actions_list:
+                    if isinstance(a, dict) and "name" in a:
+                        name = str(a["name"])
+                        trans = int(a.get("transitions", a.get("states", a.get("distinct_states", 0))))
+                        evidence[name.lower()] = trans
+                return evidence
+
+    # 2. Check raw_output for explicit transition / coverage reports
+    # Pattern 2a: Explicit summary line e.g. "Transitions: Acquire, Release" or "Coverage: Acquire(10), Release(5)"
+    m_trans_line = re.search(r"(?:Transitions|Coverage|Exercised actions?):\s*([^\n]+)", raw_output, re.IGNORECASE)
+    if m_trans_line:
+        line_content = m_trans_line.group(1)
+        found_any = False
+        for act in all_expected_actions:
+            if re.search(rf"\b{re.escape(act)}\b", line_content, re.IGNORECASE):
+                evidence[act.lower()] = 1
+                found_any = True
+        if found_any:
+            return evidence
+
+    # Pattern 2b: Java TLC action profiling / coverage lines
+    # e.g. "Action <line ...> Acquire has generated 12 states" or "Acquire: 12 states"
+    found_tlc_profiling = False
+    for line in raw_output.splitlines():
+        for act in all_expected_actions:
+            m_act = re.search(
+                rf"(?:Action\s+.*?|\b){re.escape(act)}\b.*?(?:has generated|:)\s*(\d+)\s*(?:states|transitions)",
+                line,
+                re.IGNORECASE,
+            )
+            if m_act:
+                count = int(m_act.group(1))
+                evidence[act.lower()] = count
+                found_tlc_profiling = True
+    if found_tlc_profiling:
+        return evidence
+
+    return None
+
+
 def check_state_exploration(
     tlc_stats: Optional[Dict[str, Any]],
     raw_output: str,
@@ -522,8 +584,11 @@ def check_state_exploration(
     auxiliary_actions: Optional[List[str]] = None,
 ) -> StateExplorationReport:
     """
-    Gate 4: Enforces distinct states > 1, transitions > 0, 100% core action firing,
-    and diagnostic warnings for auxiliary actions.
+    Gate 4: Enforces distinct states > 1, transitions > 0.
+    If per-action exploration evidence is available, enforces 100% core action firing
+    and emits diagnostic warnings for auxiliary actions.
+    If per-action evidence is unavailable from the model checker, reports coverage
+    as unavailable rather than falsely claiming coverage.
     """
     distinct_states = 0
     transitions = 0
@@ -552,13 +617,31 @@ def check_state_exploration(
             f"Next is unreachable, deadlocked at Init, or action guards never fire."
         )
 
-    # 2. Action Coverage Check
+    # 2. Per-Action Exploration Evidence Check
+    all_expected = set(core_actions) | set(auxiliary_actions or [])
+    evidence = _extract_per_action_evidence(tlc_stats, raw_output, all_expected)
+
+    if evidence is None:
+        # Per-action coverage evidence is unavailable from backend (e.g. tla-rs aggregate Next)
+        warnings = [
+            "Per-action coverage evidence is unavailable from model checker (only aggregate transitions reported)."
+        ]
+        return StateExplorationReport(
+            distinct_states=distinct_states,
+            transitions=transitions,
+            exercised_core_actions=[],
+            dead_core_actions=[],
+            warnings=warnings,
+            coverage_available=False,
+        )
+
     exercised_core: List[str] = []
     dead_core: List[str] = []
     warnings: List[str] = []
 
     for act in core_actions:
-        if re.search(rf"\b{re.escape(act)}\b", raw_output, re.IGNORECASE) or distinct_states > 2:
+        trans_count = evidence.get(act.lower(), 0)
+        if trans_count > 0:
             exercised_core.append(act)
         else:
             dead_core.append(act)
@@ -571,15 +654,16 @@ def check_state_exploration(
 
     if auxiliary_actions:
         for aux in auxiliary_actions:
-            if not re.search(rf"\b{re.escape(aux)}\b", raw_output, re.IGNORECASE):
+            if evidence.get(aux.lower(), 0) == 0:
                 warnings.append(f"Auxiliary action '{aux}' was not exercised during model checking.")
 
     return StateExplorationReport(
         distinct_states=distinct_states,
         transitions=transitions,
         exercised_core_actions=exercised_core,
-        dead_core_actions=dead_core,
+        dead_core_actions=[],
         warnings=warnings,
+        coverage_available=True,
     )
 
 
@@ -874,9 +958,13 @@ def evaluate_spec_vacuity(
             auxiliary_actions=aux_actions,
         )
         warnings.extend(state_report.warnings)
+        if state_report.coverage_available:
+            action_summary = f"100% Core Actions Exercised: {state_report.exercised_core_actions}"
+        else:
+            action_summary = "Per-action coverage: unavailable from backend"
         hard_gates_passed.append(
             f"State Exploration & Action Coverage (Distinct states: {state_report.distinct_states}, "
-            f"Transitions: {state_report.transitions}, 100% Core Actions Exercised)"
+            f"Transitions: {state_report.transitions}; {action_summary})"
         )
     except VacuityError as e:
         hard_gates_failed.append(f"Gate 4 Failed: {e}")
