@@ -22,6 +22,8 @@ LOG_FILE   = "model/generation-log.md"
 BASE_TLA   = "model/base.tla"
 BASE_CFG   = "model/base.cfg"
 
+from agents.spec_generator.vacuity import evaluate_spec_vacuity, VacuityReport, VacuityError
+
 
 # Errors
 class VerifyError(Exception):
@@ -106,6 +108,21 @@ class TlaRsClient:
 
     def stop(self) -> None:
         if self._proc:
+            try:
+                if self._proc.stdin:
+                    self._proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                if self._proc.stdout:
+                    self._proc.stdout.close()
+            except Exception:
+                pass
+            try:
+                if self._proc.stderr:
+                    self._proc.stderr.close()
+            except Exception:
+                pass
             try:
                 self._proc.terminate()
                 self._proc.wait(timeout=2)
@@ -233,8 +250,8 @@ def _validate(client: McpClient, tla_text: str) -> tuple[bool, str]:
 
 
 # check_spec call
-def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str]:
-    """Returns (outcome, detail) where outcome is 'pass'|'counterexample'|'error'|'limit'."""
+def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str, dict, str]:
+    """Returns (outcome, detail, stats, raw) where outcome is 'pass'|'counterexample'|'error'|'limit'."""
     max_states  = int(os.environ.get("TLA_RS_MAX_STATES",  "1000"))
     max_depth   = int(os.environ.get("TLA_RS_MAX_DEPTH",   "30"))
     max_seconds = int(os.environ.get("TLA_RS_MAX_SECONDS", "15"))
@@ -248,9 +265,10 @@ def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str]:
             "max_seconds": max_seconds,
         })
     except Exception as e:
-        return "error", str(e)
+        return "error", str(e), {}, str(e)
 
     raw = result.get("raw", json.dumps(result))
+    stats = result.get("stats") or {}
 
     status = (
         result.get("status")
@@ -260,19 +278,25 @@ def _check(client: McpClient, tla_text: str, cfg_text: str) -> tuple[str, str]:
     status = str(status).lower()
 
     if "limit" in status or "limit reached" in raw.lower() or "limit_reached" in raw.lower():
-        return "limit", raw
-    if "counterexample" in status or "counterexample" in raw.lower() or ("violation" in raw.lower() and "no violation" not in raw.lower()):
+        return "limit", raw, stats, raw
+    if (
+        "counterexample" in status
+        or "invariant_violation" in status
+        or "counterexample" in raw.lower()
+        or ("violat" in status and "no violation" not in status)
+        or ("violat" in raw.lower() and "no violation" not in raw.lower())
+    ):
         ce = result.get("counterexample") or result.get("trace") or raw
         if isinstance(ce, (list, dict)):
             ce = json.dumps(ce, indent=2)
-        return "counterexample", str(ce)
+        return "counterexample", str(ce), stats, raw
     if result.get("success") is True or status in ("ok", "pass", "passed") or "no violation" in raw.lower():
-        return "pass", ""
+        return "pass", "", stats, raw
     if "error" in status or "fail" in status:
-        return "error", raw
+        return "error", raw, stats, raw
     if "error" not in raw.lower() and "fail" not in raw.lower():
-        return "pass", ""
-    return "error", raw
+        return "pass", "", stats, raw
+    return "error", raw, stats, raw
 
 
 # Self-repair via LLM
@@ -344,6 +368,7 @@ def _export(
     repair_count:  int,
     repair_cap:    int,
     knowledge_files: list[str],
+    vacuity_report: Optional[VacuityReport] = None,
 ) -> Path:
     export_dir = out / "export"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -368,6 +393,27 @@ def _export(
     if check_outcome == "counterexample":
         ce_section = f"\n### Counterexample\n{check_detail}\n"
 
+    vacuity_section = ""
+    if vacuity_report is not None:
+        gates_list = "\n".join(f"- {g}: PASS" for g in vacuity_report.hard_gates_passed)
+        warn_list = "\n".join(f"- {w}" for w in vacuity_report.warnings) if vacuity_report.warnings else "- (none)"
+        rlaif_conf = f"{int(vacuity_report.correspondence.rlaif_confidence * 100)}%" if vacuity_report.correspondence else "N/A"
+        rlaif_notes = vacuity_report.rlaif_notes or "Model correspondence verified against Python source."
+
+        vacuity_section = f"""
+## Non-Vacuity & Implementation Correspondence
+
+- **Gatekeeper Verdict**: {vacuity_report.verdict}
+- **Hard Gates Passed**:
+{gates_list}
+- **Diagnostic Warnings**:
+{warn_list}
+
+### Semantic Implementation Fidelity (LLM-as-a-Judge Supporting Evidence)
+- **Confidence Score**: {rlaif_conf}
+- **Audit Reasoning**: {rlaif_notes}
+"""
+
     kf_list = "\n".join(f"- {f}" for f in knowledge_files) or "- (none recorded)"
 
     manifest = f"""# Export Manifest
@@ -383,7 +429,7 @@ def _export(
 - **Syntax validation**: {syntax_str}
 - **Model checking**: {check_str}
 - **Self-repair attempts used**: {repair_count} / {repair_cap}
-{ce_section}
+{ce_section}{vacuity_section}
 ## Handoff
 
 This model is ready as input to the next phase (Trace Mapper / Conformance
@@ -432,6 +478,27 @@ def _knowledge_files_used(out: Path) -> list[str]:
     return []
 
 
+def _format_box(title: str, lines: list[str], W: int = 80) -> str:
+    top = "┌" + "─" * (W - 2) + "┐"
+    div = "├" + "─" * (W - 2) + "┤"
+    bot = "└" + "─" * (W - 2) + "┘"
+    out = [top, f"│ {title.ljust(W - 4)[:W - 4]} │", div]
+    for line in lines:
+        if line == "---":
+            out.append(div)
+        else:
+            out.append(f"│ {line.ljust(W - 4)[:W - 4]} │")
+    out.append(bot)
+    return "\n".join(out)
+
+
+def _step_line(num_label: str, name: str, status: str, width: int = 76) -> str:
+    left = f"[{num_label}] {name} "
+    right = f" [ {status} ]"
+    dots = "." * max(2, width - len(left) - len(right))
+    return f"{left}{dots}{right}"
+
+
 # Public API
 def verify_run(
     output_dir: str | Path = ".traceproof-poc",
@@ -466,6 +533,14 @@ def verify_run(
     if client is None:
         client = _connect_tla_rs()
 
+    # Resolve target source for reporting
+    src_raw = cfg.get("Source paths", "") or cfg.get("Source file(s)", "")
+    target_source = None
+    if src_raw and src_raw.lower() != "none":
+        candidates = [p.strip() for p in src_raw.split(",") if p.strip()]
+        if candidates:
+            target_source = candidates[0]
+
     try:
         tla_text = tla_path.read_text()
         cfg_text = cfg_path.read_text()
@@ -473,17 +548,10 @@ def verify_run(
         # Step 1: validate + capped self-repair
         repair_count = 0
         syntax_pass, errors = _validate(client, tla_text)
-        print(f"Syntax validation: {'PASS' if syntax_pass else 'FAIL'}")
 
         while not syntax_pass and repair_count < repair_cap:
             if not _credential_present(provider) or not model_strong:
-                print(
-                    f"  Syntax errors present but no LLM credentials, "
-                    f"cannot self-repair. Fix model/base.tla manually.",
-                    file=sys.stderr,
-                )
                 break
-            print(f"  Self-repair attempt {repair_count + 1}/{repair_cap} …")
             fixed = _repair_call(tla_text, errors, provider, model_strong)
             if not fixed:
                 break
@@ -491,22 +559,41 @@ def verify_run(
             tla_text = fixed.strip()
             tla_path.write_text(tla_text)
             syntax_pass, errors = _validate(client, tla_text)
-            print(f"  Re-validate: {'PASS' if syntax_pass else 'FAIL'}")
 
         if not syntax_pass:
             _log_verify(out, repair_count, False, "not_reached", errors)
+            box_lines = [
+                f"Target:  {target_source or '<none>'}",
+                f"Spec:    {tla_path.name} (config: {cfg_path.name})",
+                "---",
+                _step_line("1/3", "Syntax Validation & Self-Repair", "FAIL"),
+                f"      • Repair Attempts Exhausted: {repair_count}/{repair_cap}",
+                f"      • Errors: {errors[:180]}",
+                "---",
+                "OUTCOME: SYNTAX VALIDATION FAILED",
+            ]
+            print("\n" + _format_box("[PHASE 5] FORMAL VERIFICATION & NON-VACUITY GATEKEEPER", box_lines, W=80) + "\n", file=sys.stderr)
             raise VerifyError(
                 f"Syntax validation failed after {repair_count} repair attempt(s) "
                 f"(cap={repair_cap}). Read model/generation-log.md for details."
             )
 
         # Step 2: model-check
-        print("Model checking …")
-        check_outcome, check_detail = _check(client, tla_text, cfg_text)
-        print(f"Model check: {check_outcome.upper()}")
+        check_outcome, check_detail, tlc_stats, tlc_raw = _check(client, tla_text, cfg_text)
 
         if check_outcome == "limit":
             _log_verify(out, repair_count, True, check_outcome, check_detail)
+            box_lines = [
+                f"Target:  {target_source or '<none>'}",
+                f"Spec:    {tla_path.name} (config: {cfg_path.name})",
+                "---",
+                _step_line("1/3", "Syntax Validation & Self-Repair", "PASS"),
+                _step_line("2/3", "TLC Model Checking (tla-rs)", "LIMIT"),
+                "      • Model check hit exploration limit (limit_reached).",
+                "---",
+                "OUTCOME: LIMIT REACHED",
+            ]
+            print("\n" + _format_box("[PHASE 5] FORMAL VERIFICATION & NON-VACUITY GATEKEEPER", box_lines, W=80) + "\n", file=sys.stderr)
             raise VerifyError(
                 "Model check hit exploration limit (limit_reached). "
                 "Raise TLA_RS_MAX_STATES / TLA_RS_MAX_DEPTH / TLA_RS_MAX_SECONDS and re-run verify. "
@@ -514,8 +601,6 @@ def verify_run(
             )
 
         if check_outcome == "error":
-            # Model-internal bug (not a real system counterexample), try to repair
-            print(f"  Model-check error (not a system counterexample), attempting repair …")
             model_errors = check_detail
             model_repair_count = 0
             while check_outcome == "error" and model_repair_count < repair_cap:
@@ -530,17 +615,73 @@ def verify_run(
                 tla_path.write_text(tla_text)
                 syntax_pass_2, _ = _validate(client, tla_text)
                 if syntax_pass_2:
-                    check_outcome, check_detail = _check(client, tla_text, cfg_text)
-                    print(f"  Re-check: {check_outcome.upper()}")
+                    check_outcome, check_detail, tlc_stats, tlc_raw = _check(client, tla_text, cfg_text)
                 else:
                     check_outcome = "error"
                     check_detail = "Repaired spec failed re-validation"
 
             if check_outcome == "error":
                 _log_verify(out, repair_count, syntax_pass, check_outcome, check_detail)
+                box_lines = [
+                    f"Target:  {target_source or '<none>'}",
+                    f"Spec:    {tla_path.name} (config: {cfg_path.name})",
+                    "---",
+                    _step_line("1/3", "Syntax Validation & Self-Repair", "PASS"),
+                    _step_line("2/3", "TLC Model Checking (tla-rs)", "ERROR"),
+                    f"      • Model-check error could not be repaired within cap={repair_cap}.",
+                    "---",
+                    "OUTCOME: MODEL-CHECK ERROR",
+                ]
+                print("\n" + _format_box("[PHASE 5] FORMAL VERIFICATION & NON-VACUITY GATEKEEPER", box_lines, W=80) + "\n", file=sys.stderr)
                 raise VerifyError(
                     f"Model-check error could not be repaired within cap={repair_cap}. "
                     f"Nothing written to export/."
+                )
+
+        # Step 2.5: Non-Vacuity & Implementation Correspondence Gatekeeper
+        vacuity_report = None
+        if check_outcome == "pass":
+            allow_constant_spec = os.environ.get("TRACEPROOF_ALLOW_CONSTANT_SPEC", "").lower() in ("1", "true", "yes")
+
+            vacuity_report = evaluate_spec_vacuity(
+                tla_text=tla_text,
+                cfg_text=cfg_text,
+                target_source=target_source,
+                client=client,
+                tlc_stats=tlc_stats,
+                tlc_raw_output=tlc_raw,
+                allow_constant_spec=allow_constant_spec,
+                in_scope_scenario=scenario,
+            )
+
+            if not vacuity_report.passed:
+                _log_verify(out, repair_count, syntax_pass, "verifier_fail (vacuous_spec)", vacuity_report.diagnostic_details)
+                box_lines = [
+                    f"Target:  {target_source or '<none>'}",
+                    f"Spec:    {tla_path.name} (config: {cfg_path.name})",
+                    "---",
+                    _step_line("1/3", "Syntax Validation & Self-Repair", "PASS"),
+                    f"      • Syntax: Clean | Self-Repair Attempts Used: {repair_count}/{repair_cap}",
+                    " ",
+                    _step_line("2/3", "TLC Model Checking (tla-rs)", "PASS"),
+                    f"      • Distinct States: {tlc_stats.get('distinct_states', 'N/A')} | Transitions: {tlc_stats.get('transitions', 'N/A')}",
+                    " ",
+                    _step_line("3/3", "Non-Vacuity & Correspondence Gatekeeper", "FAIL"),
+                ]
+                for g in vacuity_report.hard_gates_passed:
+                    box_lines.append(f"      ✔ {g}")
+                for g in vacuity_report.hard_gates_failed:
+                    box_lines.append(f"      ✖ {g}")
+                box_lines.extend([
+                    "---",
+                    f"VERDICT: {vacuity_report.verdict}",
+                    f"REJECTION: {vacuity_report.diagnostic_details}",
+                    "Pipeline Halted: Export blocked. Spec is vacuous or unfaithful.",
+                ])
+                print("\n" + _format_box("[PHASE 5] FORMAL VERIFICATION & NON-VACUITY GATEKEEPER", box_lines, W=80) + "\n", file=sys.stderr)
+                raise VerifyError(
+                    f"Non-vacuity verification failed ({vacuity_report.verdict}): "
+                    f"{vacuity_report.diagnostic_details}. Specification was rejected as vacuous or unfaithful."
                 )
 
         # Step 3: export
@@ -553,15 +694,56 @@ def verify_run(
             repair_count=repair_count,
             repair_cap=repair_cap,
             knowledge_files=knowledge_files,
+            vacuity_report=vacuity_report,
         )
         _log_verify(out, repair_count, syntax_pass, check_outcome, check_detail)
 
-        outcome_label = {
-            "pass":            "PASS, model and manifest written to export/",
-            "counterexample":  "COUNTEREXAMPLE FOUND, this is a system result, not a pipeline error. See export/manifest.md",
-        }.get(check_outcome, check_outcome.upper())
-        print(f"\n{outcome_label}")
-        print(f"Manifest: {manifest}")
+        # Render and display final verification summary box
+        if check_outcome == "pass" and vacuity_report is not None:
+            box_lines = [
+                f"Target:  {target_source or '<none>'}",
+                f"Spec:    {tla_path.name} (config: {cfg_path.name})",
+                "---",
+                _step_line("1/3", "Syntax Validation & Self-Repair", "PASS"),
+                f"      • Syntax: Clean | Self-Repair Attempts Used: {repair_count}/{repair_cap}",
+                " ",
+                _step_line("2/3", "TLC Model Checking (tla-rs)", "PASS"),
+                f"      • Distinct States: {tlc_stats.get('distinct_states', 'N/A')} | Transitions: {tlc_stats.get('transitions', 'N/A')}",
+                " ",
+                _step_line("3/3", "Non-Vacuity & Correspondence Gatekeeper", "PASS"),
+            ]
+            for gate in vacuity_report.hard_gates_passed:
+                box_lines.append(f"      ✔ {gate}")
+            for w in vacuity_report.warnings:
+                box_lines.append(f"      ⚠ {w}")
+            box_lines.extend([
+                "---",
+                f"VERDICT: {vacuity_report.verdict}",
+                f"Manifest: {manifest}",
+            ])
+            print("\n" + _format_box("[PHASE 5] FORMAL VERIFICATION & NON-VACUITY GATEKEEPER", box_lines, W=80) + "\n")
+        elif check_outcome == "counterexample":
+            box_lines = [
+                f"Target:  {target_source or '<none>'}",
+                f"Spec:    {tla_path.name} (config: {cfg_path.name})",
+                "---",
+                _step_line("1/3", "Syntax Validation & Self-Repair", "PASS"),
+                f"      • Syntax: Clean | Self-Repair Attempts Used: {repair_count}/{repair_cap}",
+                " ",
+                _step_line("2/3", "TLC Model Checking (tla-rs)", "COUNTEREXAMPLE"),
+                f"      • State Space Explored: {tlc_stats.get('distinct_states', 'N/A')} distinct state(s)",
+                "      • Invariant Status: Invariant Violation Detected",
+                "      ℹ Valid race condition / bug candidate found!",
+                "        (Handed off to Phase 6 Adversary & Phase 7 Reproducer)",
+                " ",
+                _step_line("3/3", "Non-Vacuity Gatekeeper", "BYPASSED"),
+                "      ℹ Invariant violation confirms spec is non-vacuous.",
+                "---",
+                "OUTCOME: COUNTEREXAMPLE FOUND (System bug candidate identified)",
+                f"Manifest: {manifest}",
+            ]
+            print("\n" + _format_box("[PHASE 5] FORMAL VERIFICATION & NON-VACUITY GATEKEEPER", box_lines, W=80) + "\n")
+
         return manifest
 
     finally:
