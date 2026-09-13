@@ -45,6 +45,16 @@ def generate_diagnostic_report(
     final_storage = details.get("final_storage", ["Worker-1-write", "Worker-2-write"])
     traceback_str = repro_data.get("error_traceback", "AssertionError: Mutual exclusion broken! Total violations detected: 1")
 
+    provenance = repro_data.get("provenance")
+    if not provenance and repro_data.get("target_source_hash"):
+        provenance = {
+            "target_source_hash": repro_data.get("target_source_hash", ""),
+            "spec_hash": repro_data.get("spec_hash", ""),
+            "cfg_hash": repro_data.get("cfg_hash", ""),
+            "counterexample_hash": repro_data.get("counterexample_hash", ""),
+        }
+    transition_mappings = repro_data.get("transition_mapping_table")
+
     target_name = target_source or "examples/dist_lock"
     egypt_tz = timezone(timedelta(hours=3))
     timestamp = datetime.now(egypt_tz).strftime("%Y-%m-%d %H:%M:%S (UTC+3, Egypt Time)")
@@ -56,6 +66,8 @@ def generate_diagnostic_report(
         violations_detected=violations_detected,
         traceback_str=traceback_str,
         storage=final_storage,
+        provenance=provenance,
+        transition_mappings=transition_mappings,
     )
 
     report_file.write_text(report_content, encoding="utf-8")
