@@ -2,7 +2,6 @@
 
 [![TLA+](https://img.shields.io/badge/Formal%20Methods-TLA%2B-blue.svg)](https://lamport.azurewebsites.net/tla/tla.html)
 [![TLC Engine](https://img.shields.io/badge/Model%20Checker-TLC%20via%20tla--mcp-orange.svg)](https://fabracht.github.io/tla-rs/)
-[![CI Tests](https://img.shields.io/badge/Tests-40%2F40%20Passing-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 
